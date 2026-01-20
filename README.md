@@ -20,6 +20,13 @@ Discordボイスチャンネルでテキスト読み上げ（TTS）と画像内�
 *   **ユーザー入退室通知**:
     *   ボイスチャンネルへの入退室を音声で通知します。
 
+## 謝辞 (Credits)
+
+本プロジェクトでは、音声合成エンジンとして **VOICEVOX** を利用しています。
+また、外部APIとして以下のサービスを利用しています。
+
+*   **WEB版VOICEVOX API (tts.quest)**: [https://voicevox.su-shiki.com/su-shikiapis/#step3](https://voicevox.su-shiki.com/su-shikiapis/#step3)
+
 ## 必要要件
 
 *   Docker & Docker Compose
@@ -64,22 +71,12 @@ Discordボイスチャンネルでテキスト読み上げ（TTS）と画像内�
 *   `/dict add [単語] [読み]`: 辞書に単語を登録します。
 *   `/dict remove [単語]`: 辞書から単語を削除します。
 *   `/dict list`: 登録されている単語一覧を表示します。
-*   `/speed [0.5-2.0]`: 読み上げ速度を変更します（デフォルト: 1.0）。
 
 ### チャット制御コマンド
 *   `s` (または `ｓ`): 現在読み上げ中の音声をスキップします。
 *   `ss` (または `ｓｓ`): 読み上げを即時停止し、待機キューを全て削除します。
 *   `;` (セミコロン) で始まるメッセージ: 読み上げから除外されます（コメントアウト）。
 
-## 謝辞 / Acknowledgements
-
-このプロジェクトは以下の素晴らしいサービスとライブラリを使用しています。
-
-*   **VOICEVOX**: 無料で使える中品質なテキスト読み上げソフトウェア
-*   **TTS Quest (WEB版VOICEVOX API)**:
-    *   外部APIとして `tts.quest` を利用しています。
-    *   詳細: [https://voicevox.su-shiki.com/su-shikiapis/#step3](https://voicevox.su-shiki.com/su-shikiapis/#step3)
-
 ## ライセンス
 
-本プロジェクトは **MIT License** の下で公開されています。詳細については [LICENSE](LICENSE) ファイルを参照してください。
+[MIT License](LICENSE)
