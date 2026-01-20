@@ -239,7 +239,10 @@ async function controlContainer(action) {
     }
 }
 
-async function generateVoicevoxAudio(text, speakerId = 1) {
+// 速度設定ストレージ (Guild ID -> Speed)
+const speedSettings = new Map();
+
+async function generateVoicevoxAudio(text, speakerId = 1, speed = 1.0) {
     let useLocal = false;
     let points = 0;
 
@@ -261,7 +264,7 @@ async function generateVoicevoxAudio(text, speakerId = 1) {
     if (!useLocal) {
         try {
             const response = await axios.get(VOICEVOX_API_URL, {
-                params: { text, key: VOICEVOX_API_KEY, speaker: speakerId, pitch: 0, intonationScale: 1, speed: 1 },
+                params: { text, key: VOICEVOX_API_KEY, speaker: speakerId, pitch: 0, intonationScale: 1, speed: speed },
                 responseType: 'stream',
                 timeout: 10000
             });
@@ -277,7 +280,9 @@ async function generateVoicevoxAudio(text, speakerId = 1) {
         await controlContainer('start');
         try {
             const queryResponse = await axios.post(`${VOICEVOX_LOCAL_URL}/audio_query`, null, { params: { text, speaker: speakerId } });
-            const synthesisResponse = await axios.post(`${VOICEVOX_LOCAL_URL}/synthesis`, queryResponse.data, { params: { speaker: speakerId }, responseType: 'stream' });
+            const query = queryResponse.data;
+            query.speedScale = speed;
+            const synthesisResponse = await axios.post(`${VOICEVOX_LOCAL_URL}/synthesis`, query, { params: { speaker: speakerId }, responseType: 'stream' });
             return synthesisResponse.data;
         } catch (localError) {
             console.error('Local Fallback Failed:', localError.message);
@@ -388,22 +393,31 @@ const commands = [
         .setDescription('Toggle auto-read mode for this channel'),
     new SlashCommandBuilder()
         .setName('dict')
-        .setDescription('Manage pronunciation dictionary')
+        .setDescription('辞書を管理します')
         .addSubcommand(subcommand =>
             subcommand
                 .setName('add')
-                .setDescription('Register a word to the dictionary')
-                .addStringOption(option => option.setName('word').setDescription('Word to register').setRequired(true))
-                .addStringOption(option => option.setName('reading').setDescription('Pronunciation (Reading)').setRequired(true)))
+                .setDescription('辞書に単語を追加します')
+                .addStringOption(option => option.setName('word').setDescription('単語').setRequired(true))
+                .addStringOption(option => option.setName('reading').setDescription('読み仮名').setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('remove')
-                .setDescription('Remove a word from the dictionary')
-                .addStringOption(option => option.setName('word').setDescription('Word to remove').setRequired(true)))
+                .setDescription('辞書から単語を削除します')
+                .addStringOption(option => option.setName('word').setDescription('単語').setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('list')
-                .setDescription('List all registered words')),
+                .setDescription('登録単語一覧を表示します')),
+    new SlashCommandBuilder()
+        .setName('speed')
+        .setDescription('読み上げ速度を変更します')
+        .addNumberOption(option =>
+            option.setName('value')
+                .setDescription('速度 (0.5 ~ 2.0)')
+                .setRequired(true)
+                .setMinValue(0.5)
+                .setMaxValue(2.0)),
 ].map(command => command.toJSON());
 
 // 辞書ストレージ
@@ -516,7 +530,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
+    // 2. Join/Leave Notifications
+    // Only if Auto-Read is ON
     if (!autoReadStates.get(guildId)) return;
+
+    // Ignore bot's own moves
     if (oldState.member?.user.bot || newState.member?.user.bot) return;
 
     let notificationText = "";
@@ -532,10 +550,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
     if (notificationText) {
         try {
-            // Check if audio player is idle? 
-            // If we just play, it might overlap or cut off current speech. 
-            // Ideally we queue, but for now `playAudio` interrupts. Simple is fine for now as per "speak" command behavior.
-            const audioStream = await generateVoicevoxAudio(notificationText, SPEAKER_ID);
+            const speed = speedSettings.get(guildId) || 1.0;
+            const audioStream = await generateVoicevoxAudio(notificationText, SPEAKER_ID, speed);
             await playAudio(guildId, audioStream);
         } catch (error) {
             console.error("Error playing join/leave notification:", error);
@@ -703,7 +719,8 @@ client.on('messageCreate', async message => {
             if (text.length > 200) text = text.substring(0, 197) + "...";
 
             if (text) {
-                const audioStream = await generateVoicevoxAudio(text, SPEAKER_ID);
+                const speed = speedSettings.get(message.guild.id) || 1.0;
+                const audioStream = await generateVoicevoxAudio(text, SPEAKER_ID, speed);
                 await playAudio(message.guild.id, audioStream);
             }
         }
@@ -784,6 +801,10 @@ client.on('interactionCreate', async interaction => {
                     }
                 }
             }
+        } else if (commandName === 'speed') {
+            const speed = interaction.options.getNumber('value');
+            speedSettings.set(interaction.guild.id, speed);
+            await interaction.reply(`読み上げ速度を ${speed} に設定しました。`);
         }
         else if (commandName === 'leave') {
             const connection = getVoiceConnection(interaction.guild.id);
@@ -849,7 +870,8 @@ client.on('interactionCreate', async interaction => {
                 }
                 await interaction.editReply(replyContent);
 
-                const audioStream = await generateVoicevoxAudio(textToSpeak, SPEAKER_ID);
+                const speed = speedSettings.get(interaction.guild.id) || 1.0;
+                const audioStream = await generateVoicevoxAudio(textToSpeak, SPEAKER_ID, speed);
                 await playAudio(interaction.guild.id, audioStream);
 
             } catch (error) {
