@@ -50,9 +50,10 @@ function cleanOCRText(text) {
     return combinedText.trim();
 }
 
-async function processImageAttachment(imageUrl) {
+// 画像処理 (OCR)
+async function processImageAttachment(imageUrl, guildId) {
     try {
-        console.log(`Processing image with Google Vision: ${imageUrl}`);
+        console.log(`Processing image: ${imageUrl}`);
 
         if (!GOOGLE_VISION_API_KEY) {
             throw new Error("GOOGLE_VISION_API_KEY is not set in .env");
@@ -154,6 +155,9 @@ async function processImageAttachment(imageUrl) {
         });
         if (currentLine.length > 0) lines.push(currentLine);
 
+        // Helper function to get text from a line of words
+        const getLineText = (line) => line.map(word => word.description).join('');
+
         // コンテンツルールに基づくフィルタリング
         // 不要な行（ブランディング、署名、ハンドル名、表示名）を除外
         const validLines = lines.map(getLineText).filter((lineText, i, arr) => {
@@ -171,7 +175,9 @@ async function processImageAttachment(imageUrl) {
 
         let finalText = cleanOCRText(reconstructedText);
         // Apply Dictionary to OCR text as well
-        finalText = applyDictionary(finalText);
+        if (guildId) {
+            finalText = applyDictionary(finalText, guildId);
+        }
 
         return { text: finalText, isQuote: isQuoteImage };
     } catch (error) {
@@ -446,18 +452,23 @@ function saveDictionary() {
 
 // 辞書適用処理
 // 部分一致を防ぐため、長い単語から順に置換
-function applyDictionary(text) {
-    if (!text) return text;
+function applyDictionary(text, guildId) {
+    if (!text || !guildId) return text;
     let processed = text;
 
+    // 辞書データがない場合は初期化（読み取りのみなので不要だが念のため）
+    if (!dictionary[guildId]) return text;
+
+    const guildDict = dictionary[guildId];
+
     // 長さ降順でソート
-    const keys = Object.keys(dictionary).sort((a, b) => b.length - a.length);
+    const keys = Object.keys(guildDict).sort((a, b) => b.length - a.length);
 
     for (const key of keys) {
         // 正規表現エスケープして置換
         const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(escapedKey, 'g');
-        processed = processed.replace(regex, dictionary[key]);
+        processed = processed.replace(regex, guildDict[key]);
     }
     return processed;
 }
@@ -610,7 +621,7 @@ client.on('messageCreate', async message => {
         .trim();
 
     // 辞書適用
-    baseMessageText = applyDictionary(baseMessageText);
+    baseMessageText = applyDictionary(baseMessageText, message.guild.id);
 
     const speechSegments = [];
     if (baseMessageText) {
@@ -621,7 +632,21 @@ client.on('messageCreate', async message => {
     let processedAnyImage = false;
 
     // 画像スキャン処理
-    if (message.attachments.size > 0) {
+    // 現在のメッセージの添付ファイル + リプライ先の添付ファイル (ある場合)
+    const targetAttachments = [...message.attachments.values()];
+
+    if (message.reference && message.reference.messageId) {
+        try {
+            const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
+            if (referencedMessage.attachments.size > 0) {
+                targetAttachments.push(...referencedMessage.attachments.values());
+            }
+        } catch (err) {
+            console.error("Failed to fetch referenced message:", err);
+        }
+    }
+
+    if (targetAttachments.length > 0) {
         let processingMsg = null;
         if (isMention) {
             processingMsg = await message.reply("画像処理中...");
@@ -629,11 +654,11 @@ client.on('messageCreate', async message => {
 
         try {
             // 全添付ファイルを処理
-            for (const [id, attachment] of message.attachments) {
+            for (const attachment of targetAttachments) {
                 if (attachment.contentType && attachment.contentType.startsWith('image/')) {
 
                     try {
-                        const result = await processImageAttachment(attachment.url);
+                        const result = await processImageAttachment(attachment.url, message.guild.id);
                         let segmentText = "";
 
                         if (isMention) {
@@ -661,7 +686,7 @@ client.on('messageCreate', async message => {
                         }
 
                     } catch (ocrError) {
-                        console.error(`OCR Error for attachment ${id}:`, ocrError);
+                        console.error(`OCR Error for attachment ${attachment.id}:`, ocrError);
                         if (isAutoRead) {
                             speechSegments.push("添付ファイル");
                             processedAnyImage = true;
@@ -763,23 +788,28 @@ client.on('interactionCreate', async interaction => {
         }
         else if (commandName === 'dict') {
             const sub = interaction.options.getSubcommand();
+            const guildId = interaction.guild.id;
+
+            // 辞書データ初期化
+            if (!dictionary[guildId]) dictionary[guildId] = {};
+
             if (sub === 'add') {
                 const word = interaction.options.getString('word');
                 const reading = interaction.options.getString('reading');
-                dictionary[word] = reading;
+                dictionary[guildId][word] = reading;
                 saveDictionary();
                 await interaction.reply(`辞書に登録しました: ${word} -> ${reading}`);
             } else if (sub === 'remove') {
                 const word = interaction.options.getString('word');
-                if (dictionary[word]) {
-                    delete dictionary[word];
+                if (dictionary[guildId][word]) {
+                    delete dictionary[guildId][word];
                     saveDictionary();
                     await interaction.reply(`辞書から削除しました: ${word}`);
                 } else {
                     await interaction.reply(`その単語は登録されていません: ${word}`);
                 }
             } else if (sub === 'list') {
-                const entries = Object.entries(dictionary).map(([k, v]) => `${k} -> ${v}`);
+                const entries = Object.entries(dictionary[guildId]).map(([k, v]) => `${k} -> ${v}`);
                 if (entries.length === 0) {
                     await interaction.reply({ content: "辞書は空です。", ephemeral: true });
                 } else {
@@ -829,7 +859,7 @@ client.on('interactionCreate', async interaction => {
                     return interaction.editReply("添付ファイルが画像ではありません。");
                 }
                 try {
-                    const result = await processImageAttachment(image.url);
+                    const result = await processImageAttachment(image.url, interaction.guild.id);
                     textToSpeak = result.text;
                     isFromImage = true;
                     if (!textToSpeak) return interaction.editReply("エラーが発生しました: 画像から文字を認識できませんでした。");
