@@ -183,7 +183,7 @@ async function processImageAttachment(imageUrl) {
 // 外部VOICEVOX API設定 (メイン)
 const VOICEVOX_API_URL = 'https://deprecatedapis.tts.quest/v2/voicevox/audio/';
 const VOICEVOX_POINTS_URL = 'https://deprecatedapis.tts.quest/v2/api/';
-const VOICEVOX_API_KEY = 'R1y2664_8-0-h_9';
+const VOICEVOX_API_KEY = process.env.VOICEVOX_API_KEY;
 
 // ローカルVOICEVOXエンジン設定 (フォールバック)
 const VOICEVOX_LOCAL_URL = process.env.VOICEVOX_URL || 'http://voicevox:50021';
