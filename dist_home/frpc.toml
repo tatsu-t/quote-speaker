@@ -1,0 +1,10 @@
+# frpc.toml
+serverAddr = "x.x.x.x"
+serverPort = 7000
+
+[[proxies]]
+name = "voicevox-tunnel"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 50021
+remotePort = 5000

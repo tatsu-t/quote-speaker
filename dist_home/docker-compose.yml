@@ -1,0 +1,9 @@
+services:
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    container_name: voicevox-engine
+    restart: always
+    ports:
+      - "50021:50021"
+    environment:
+      - VV_CPU_NUM_THREADS=4
