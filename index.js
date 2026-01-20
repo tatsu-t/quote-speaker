@@ -1,15 +1,15 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, REST } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, Routes, REST, EmbedBuilder } = require('discord.js');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState, getVoiceConnection } = require('@discordjs/voice');
 const axios = require('axios');
 const { Readable } = require('stream');
 const fs = require('fs');
 const path = require('path');
 
-// 設定
+// Configuration
 const VOICEVOX_URL = process.env.VOICEVOX_URL || 'http://voicevox:50021';
 const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
-// 話者ID 3: ずんだもん (ノーマル)
+// Speaker ID 3 is Zundamon (Normal style).
 const SPEAKER_ID = 3;
 
 const client = new Client({
@@ -21,39 +21,53 @@ const client = new Client({
     ]
 });
 
+// Track the last active text channel for each guild to send auto-leave notifications
 const lastTextChannel = new Map();
+// Track auto-read mode state for each guild (Default: OFF)
 const autoReadStates = new Map();
 
 
 
+// Helper to clean OCR text
 function cleanOCRText(text) {
     if (!text) return "";
 
     // Basic normalization
     let combinedText = text.trim();
 
-    // OCR補正処理
-    combinedText = combinedText.replace(/[\u200B-\u200D\uFEFF]/g, '')
-        .replace(/https?:\/\/\S+/g, '')
-        .replace(/([^\x00-\x7F])かルー/g, '$1から')
-        .replace(/([^\x00-\x7F])かル/g, '$1から')
-        .replace(/でルー/g, 'で')
-        .replace(/w{3,}/gi, 'www')
-        //    - 末尾ノイズ ('0', '°')
-        //    - "男" の誤認 ('0だから' -> '男だから')
-        //    - ハート記号 (♡) の誤認 ('さーんく' -> 'さーん♡')
-        .replace(/^[0°]+/, '')
-        .replace(/0だから/g, '男だから')
-        .replace(/さーんく/g, 'さーん♡')
-        .replace(/([ぁ-ん])ーんく/g, '$1ーん♡');
+    // Remove zero-width spaces
+    combinedText = combinedText.replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+    // Remove URLs
+    combinedText = combinedText.replace(/https?:\/\/\S+/g, '');
+
+    // OCR Correction: Common katakana/kanji misreads (Generic)
+    combinedText = combinedText.replace(/([^\x00-\x7F])かルー/g, '$1から');
+    combinedText = combinedText.replace(/([^\x00-\x7F])かル/g, '$1から');
+    combinedText = combinedText.replace(/でルー/g, 'で');
+
+    // Normalize repeated 'w' (laughter) to 'www'
+    combinedText = combinedText.replace(/w{3,}/gi, 'www');
+
+    // OCR Fix: Leading noise (e.g. '0', '°' from illustrations)
+    combinedText = combinedText.replace(/^[0°]+/, '');
+
+    // OCR Fix: Specific misread of "男" (Male) as "0"
+    // Case 1: "0だから" -> "男だから"
+    combinedText = combinedText.replace(/0だから/g, '男だから');
+
+    // OCR Fix: Heart symbol (♡) misread as "く" (Hiragana Ku)
+    // Context: "さーんく" -> "さーん♡" (San-Ku -> San-Heart)
+    combinedText = combinedText.replace(/さーんく/g, 'さーん♡');
+    // Generic: "Hiragana + Long Vowel + N + Ku" (e.g. 〜ーんく) -> Assume Heart
+    combinedText = combinedText.replace(/([ぁ-ん])ーんく/g, '$1ーん♡');
 
     return combinedText.trim();
 }
 
-// 画像処理 (OCR)
-async function processImageAttachment(imageUrl, guildId) {
+async function processImageAttachment(imageUrl) {
     try {
-        console.log(`Processing image: ${imageUrl}`);
+        console.log(`Processing image with Google Vision: ${imageUrl}`);
 
         if (!GOOGLE_VISION_API_KEY) {
             throw new Error("GOOGLE_VISION_API_KEY is not set in .env");
@@ -80,7 +94,7 @@ async function processImageAttachment(imageUrl, guildId) {
         }
 
         const annotations = responses[0].textAnnotations;
-        // 最初の要素は全文、以後は個別の単語
+        // The first annotation is the full text, subsequent ones are individual words
         const words = annotations.slice(1);
 
         let imgWidth = 0;
@@ -95,7 +109,7 @@ async function processImageAttachment(imageUrl, guildId) {
 
         console.log(`Estimated Image Size: ${imgWidth}x${imgHeight}`);
 
-        // Quote画像判定 (各行のテキストに基づく)
+        // Check if image is a "Quote" image based on branding text
         const fullText = annotations[0].description;
         const isQuoteImage = /Make\s*it\s*a\s*Quote|Quote\s*Maker/i.test(fullText);
         console.log(`Is Quote Image: ${isQuoteImage}`);
@@ -114,15 +128,15 @@ async function processImageAttachment(imageUrl, guildId) {
             // 2. Bottom Exclusion (Branding only) - Exclude bottom 5%
             if (midY > imgHeight * 0.95) return false;
 
-            // 3. 左側の除外処理 (イラスト由来のノイズ除去)
-            // イラスト上の文字が誤検知されるケースへの対応
+            // 3. Left Exclusion (Illustration noise) - Exclude left 10%
+            // Handles cases where text on illustrations (left side) is picked up.
             const midX = (Math.min(...word.boundingPoly.vertices.map(v => v.x || 0)) + Math.max(...word.boundingPoly.vertices.map(v => v.x || 0))) / 2;
             if (midX < imgWidth * 0.10) return false;
 
             return true;
         });
 
-        // 並び替え処理: 行単位(Y軸)でグループ化し、X軸でソート
+        // Robust Sorting: Group by line (Y-axis), then sort by X-axis
         filteredWords.sort((a, b) => {
             const ysA = a.boundingPoly.vertices.map(v => v.y || 0);
             const ysB = b.boundingPoly.vertices.map(v => v.y || 0);
@@ -137,7 +151,7 @@ async function processImageAttachment(imageUrl, guildId) {
             return midYA - midYB;
         });
 
-        // 行ごとのグループ化
+        // Group into lines
         const lines = [];
         let currentLine = [];
         let lastY = -1;
@@ -155,29 +169,43 @@ async function processImageAttachment(imageUrl, guildId) {
         });
         if (currentLine.length > 0) lines.push(currentLine);
 
-        // Helper function to get text from a line of words
-        const getLineText = (line) => line.map(word => word.description).join('');
+        // Filter lines based on content rules
+        let validLines = [];
+        const getLineText = (line) => line.map(w => w.description).join('');
 
-        // コンテンツルールに基づくフィルタリング
-        // 不要な行（ブランディング、署名、ハンドル名、表示名）を除外
-        const validLines = lines.map(getLineText).filter((lineText, i, arr) => {
-            if (!isQuoteImage) return true;
-            if (/Make[ \t]*it[ \t]*a[ \t]*Quote|Quote[ \t]*Maker/i.test(lineText)) return false;
-            if (/^[-—|]/.test(lineText)) return false;
-            if (/^@/.test(lineText)) return false;
-            // 次の行が @ で始まる場合（表示名と推測される）も除外
-            if (i < arr.length - 1 && /^@/.test(arr[i + 1]) && lineText.length < 30) return false;
-            return true;
-        });
+        for (let i = 0; i < lines.length; i++) {
+            const lineText = getLineText(lines[i]);
+
+            if (isQuoteImage) {
+                // Rule A: Drop branding
+                if (/Make[ \t]*it[ \t]*a[ \t]*Quote/i.test(lineText)) continue;
+                if (/Quote[ \t]*Maker/i.test(lineText)) continue;
+
+                // Rule B: Drop lines starting with specific signature chars
+                if (/^[-—|]/.test(lineText)) continue;
+
+                // Rule C: Drop lines starting with @ (Handle)
+                if (/^@/.test(lineText)) continue;
+
+                // Rule D: Drop line if NEXT line starts with @ (Display Name check)
+                // Assumes display name is relatively short.
+                if (i < lines.length - 1) {
+                    const nextLineText = getLineText(lines[i + 1]);
+                    if (/^@/.test(nextLineText)) {
+                        if (lineText.length < 30) continue;
+                    }
+                }
+            }
+
+            validLines.push(lineText);
+        }
 
         const reconstructedText = validLines.join('');
         console.log(`Filtered Text: ${reconstructedText}`);
 
         let finalText = cleanOCRText(reconstructedText);
         // Apply Dictionary to OCR text as well
-        if (guildId) {
-            finalText = applyDictionary(finalText, guildId);
-        }
+        finalText = applyDictionary(finalText);
 
         return { text: finalText, isQuote: isQuoteImage };
     } catch (error) {
@@ -186,20 +214,20 @@ async function processImageAttachment(imageUrl, guildId) {
     }
 }
 
-// 外部VOICEVOX API設定 (メイン)
+// External VOICEVOX API Configuration (Primary)
 const VOICEVOX_API_URL = 'https://deprecatedapis.tts.quest/v2/voicevox/audio/';
 const VOICEVOX_POINTS_URL = 'https://deprecatedapis.tts.quest/v2/api/';
-const VOICEVOX_API_KEY = process.env.VOICEVOX_API_KEY;
+const VOICEVOX_API_KEY = process.env.VOICEVOX_API_KEY || 'R1y2664_8-0-h_9';
 
-// ローカルVOICEVOXエンジン設定 (フォールバック)
+// Local VOICEVOX Engine Configuration (Fallback)
 const VOICEVOX_LOCAL_URL = process.env.VOICEVOX_URL || 'http://voicevox:50021';
 const VOICEVOX_CONTAINER_NAME = 'quotespeak-voicevox-1';
 const DOCKER_SOCKET_PATH = '/var/run/docker.sock';
 
-// コンテナ状態追跡
-let isContainerRunning = true; // 起動時チェックまでは実行中と仮定
+// State Tracking
+let isContainerRunning = true; // Assume running at start until checked/stopped
 
-// APIポイント確認
+// Check API Points
 async function checkApiPoints() {
     try {
         const response = await axios.get(VOICEVOX_POINTS_URL, {
@@ -208,15 +236,15 @@ async function checkApiPoints() {
         return response.data; // { points: number, resetInHours: number }
     } catch (error) {
         console.error('Failed to check API points:', error.message);
-        return null; // 確認失敗時
+        return null; // Assume checking failed but maybe service is up
     }
 }
 
-// Dockerコンテナ制御 (起動/停止)
+// Control Docker Container (Start/Stop)
 async function controlContainer(action) {
     if (action !== 'start' && action !== 'stop') return;
 
-    // 最適化: 既に目的の状態であればスキップ
+    // Optimization: Skip if already in desired state (based on local flag)
     if (action === 'start' && isContainerRunning) return;
     if (action === 'stop' && !isContainerRunning) return;
 
@@ -235,7 +263,7 @@ async function controlContainer(action) {
             await new Promise(resolve => setTimeout(resolve, 5000));
         }
     } catch (error) {
-        // "Not Modified" (304) は無視（既に目的の状態）
+        // Ignore "Not Modified" (304) implies already in desired state
         if (error.response && error.response.status === 304) {
             console.log(`Docker: Container ${VOICEVOX_CONTAINER_NAME} already ${action}ed (304).`);
             isContainerRunning = (action === 'start');
@@ -245,51 +273,75 @@ async function controlContainer(action) {
     }
 }
 
-// 速度設定ストレージ (Guild ID -> Speed)
-const speedSettings = new Map();
-
-async function generateVoicevoxAudio(text, speakerId = 1, speed = 1.0) {
+async function generateVoicevoxAudio(text, speakerId = 1) {
     let useLocal = false;
     let points = 0;
 
-    // 1. ポイント確認・リソース管理
+    // 1. Check Points Strategy
     const pointsData = await checkApiPoints();
     if (pointsData) {
         points = pointsData.points;
         console.log(`Current API Points: ${points}`);
-        if (points < 1000) {
+        if (points < 1000) { // Threshold for low points
             console.warn("API Points Low! Switching to Local Engine.");
             useLocal = true;
-        } else if (isContainerRunning) {
-            console.log("API Points recovered. Stopping local engine...");
-            controlContainer('stop');
+        } else {
+            // Requirement: Auto-switch back implies stopping local to save resources
+            if (isContainerRunning) {
+                console.log("API Points recovered. Stopping local engine to save resources...");
+                controlContainer('stop'); // Fire and forget or await? Safer to await or let it happen
+                // To avoid latency, we can not await, but sticking to await for safety
+            }
         }
     }
 
-    // 2. 外部API試行
+    // 2. Try External API (if points sufficient)
     if (!useLocal) {
         try {
             const response = await axios.get(VOICEVOX_API_URL, {
-                params: { text, key: VOICEVOX_API_KEY, speaker: speakerId, pitch: 0, intonationScale: 1, speed: speed },
+                params: {
+                    text: text,
+                    key: VOICEVOX_API_KEY,
+                    speaker: speakerId,
+                    pitch: 0,
+                    intonationScale: 1,
+                    speed: 1
+                },
                 responseType: 'stream',
                 timeout: 10000
             });
             return response.data;
         } catch (externalError) {
-            console.warn('External API Failed. Switching to Local Fallback...', externalError.message);
+            console.warn('External API Failed (Error or Points run out). Switching to Local Fallback...', externalError.message);
             useLocal = true;
         }
     }
 
-    // 3. ローカルエンジン（フォールバック）
+    // 3. Local Engine Fallback
     if (useLocal) {
+        // Ensure container is running
         await controlContainer('start');
+
         try {
-            const queryResponse = await axios.post(`${VOICEVOX_LOCAL_URL}/audio_query`, null, { params: { text, speaker: speakerId } });
-            const query = queryResponse.data;
-            query.speedScale = speed;
-            const synthesisResponse = await axios.post(`${VOICEVOX_LOCAL_URL}/synthesis`, query, { params: { speaker: speakerId }, responseType: 'stream' });
+            // Step 1: Query
+            const queryResponse = await axios.post(
+                `${VOICEVOX_LOCAL_URL}/audio_query`,
+                null,
+                { params: { text: text, speaker: speakerId } }
+            );
+            const audioQuery = queryResponse.data;
+
+            // Step 2: Synthesis
+            const synthesisResponse = await axios.post(
+                `${VOICEVOX_LOCAL_URL}/synthesis`,
+                audioQuery,
+                {
+                    params: { speaker: speakerId },
+                    responseType: 'stream'
+                }
+            );
             return synthesisResponse.data;
+
         } catch (localError) {
             console.error('Local Fallback Failed:', localError.message);
             throw new Error("TTS Generation Failed on both External and Local engines.");
@@ -310,7 +362,7 @@ function getGuildAudioPlayer(guildId) {
         };
 
         player.on(AudioPlayerStatus.Idle, () => {
-            // 完了した項目の解決処理
+            // Resolve the finished item
             if (state.currentItem && state.currentItem.resolve) {
                 state.currentItem.resolve();
             }
@@ -320,7 +372,7 @@ function getGuildAudioPlayer(guildId) {
 
         player.on('error', (error) => {
             console.error('Audio player error:', error);
-            // 失敗した項目の拒否処理
+            // Reject the failed item
             if (state.currentItem && state.currentItem.reject) {
                 state.currentItem.reject(error);
             }
@@ -355,8 +407,9 @@ async function playAudio(guildId, audioStream) {
 
     const state = getGuildAudioPlayer(guildId);
 
-    // 既にサブスクライブ済みか確認
-
+    // Subscribe if not already subscribed (or re-subscribe to ensure link)
+    // Checking subscription.player is tricky, safer to just subscribe always? 
+    // Or check connection.state.subscription.
     if (!connection.state.subscription || connection.state.subscription.player !== state.player) {
         connection.subscribe(state.player);
     }
@@ -399,34 +452,28 @@ const commands = [
         .setDescription('Toggle auto-read mode for this channel'),
     new SlashCommandBuilder()
         .setName('dict')
-        .setDescription('辞書を管理します')
+        .setDescription('Manage pronunciation dictionary')
         .addSubcommand(subcommand =>
             subcommand
                 .setName('add')
-                .setDescription('辞書に単語を追加します')
-                .addStringOption(option => option.setName('word').setDescription('単語').setRequired(true))
-                .addStringOption(option => option.setName('reading').setDescription('読み仮名').setRequired(true)))
+                .setDescription('Register a word to the dictionary')
+                .addStringOption(option => option.setName('word').setDescription('Word to register').setRequired(true))
+                .addStringOption(option => option.setName('reading').setDescription('Pronunciation (Reading)').setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('remove')
-                .setDescription('辞書から単語を削除します')
-                .addStringOption(option => option.setName('word').setDescription('単語').setRequired(true)))
+                .setDescription('Remove a word from the dictionary')
+                .addStringOption(option => option.setName('word').setDescription('Word to remove').setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('list')
-                .setDescription('登録単語一覧を表示します')),
+                .setDescription('List all registered words')),
     new SlashCommandBuilder()
-        .setName('speed')
-        .setDescription('読み上げ速度を変更します')
-        .addNumberOption(option =>
-            option.setName('value')
-                .setDescription('速度 (0.5 ~ 2.0)')
-                .setRequired(true)
-                .setMinValue(0.5)
-                .setMaxValue(2.0)),
+        .setName('ping')
+        .setDescription('Replies with Pong and latency info'),
 ].map(command => command.toJSON());
 
-// 辞書ストレージ
+// Dictionary Storage
 const DICT_FILE = path.join(__dirname, 'dictionary.json');
 let dictionary = {};
 
@@ -450,43 +497,40 @@ function saveDictionary() {
     }
 }
 
-// 辞書適用処理
-// 部分一致を防ぐため、長い単語から順に置換
-function applyDictionary(text, guildId) {
-    if (!text || !guildId) return text;
+// Apply dictionary replacements
+// Priority: Longer words first to avoid partial replacements of substrings
+function applyDictionary(text) {
+    if (!text) return text;
     let processed = text;
 
-    // 辞書データがない場合は初期化（読み取りのみなので不要だが念のため）
-    if (!dictionary[guildId]) return text;
-
-    const guildDict = dictionary[guildId];
-
-    // 長さ降順でソート
-    const keys = Object.keys(guildDict).sort((a, b) => b.length - a.length);
+    // Sort keys by length descending to match longest first
+    const keys = Object.keys(dictionary).sort((a, b) => b.length - a.length);
 
     for (const key of keys) {
-        // 正規表現エスケープして置換
+        // Simple global replacement. 
+        // Escaping regex special characters in key is important.
         const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(escapedKey, 'g');
-        processed = processed.replace(regex, guildDict[key]);
+        processed = processed.replace(regex, dictionary[key]);
     }
     return processed;
 }
 
-// 初期ロード
+// Initial Load
 loadDictionary();
 
 client.once('ready', async () => {
     console.log('Ready!');
 
-    // 起動時の最適化: ポイント確認し、可能ならローカルコンテナを停止
+    // Startup Optimization: Check API points and stop local container if feasible
     const pointsData = await checkApiPoints();
     if (pointsData && pointsData.points > 1000) {
         console.log(`Startup: API Points Sufficient (${pointsData.points}). Stopping local engine to save resources.`);
         await controlContainer('stop');
     } else {
         console.log(`Startup: API Points Low or Unknown. Keeping local engine running (or it is already stopped/started state unknown).`);
-        // 必要に応じて起動待機処理を入れる
+        // Optionally ensure start if low?
+        // await controlContainer('start');
     }
 
     console.log(`VOICEVOX URL set to: ${VOICEVOX_URL}`);
@@ -503,7 +547,7 @@ client.once('ready', async () => {
         const guildIds = client.guilds.cache.map(guild => guild.id);
         for (const guildId of guildIds) {
             try {
-                // ギルド固有コマンドを削除（グローバルのみ使用）
+                // Clear guild-specific commands to prevent duplicates (Use Global only)
                 await rest.put(
                     Routes.applicationGuildCommands(client.user.id, guildId),
                     { body: [] },
@@ -526,8 +570,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     if (!connection) return;
 
     const botChannelId = connection.joinConfig.channelId;
+
+    // 1. Auto-Disconnect Logic (Existing)
     if (oldState.channelId === botChannelId) {
         const channel = oldState.channel || oldState.guild.channels.cache.get(oldState.channelId);
+        // If bot is the only one left
         if (channel && channel.members.size === 1 && channel.members.has(client.user.id)) {
             connection.destroy();
             const textChannelId = lastTextChannel.get(guildId);
@@ -537,7 +584,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                     textChannel.send("ボイスチャンネルに誰もいなくなったため、自動退出しました。");
                 }
             }
-            return;
+            return; // Exit as bot has left
         }
     }
 
@@ -545,7 +592,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     // Only if Auto-Read is ON
     if (!autoReadStates.get(guildId)) return;
 
-    // Ignore bot's own moves
+    // Ignore bot's own moves (though bot is excluded by 'if (member.user.bot)' checks usually, let's be safe)
     if (oldState.member?.user.bot || newState.member?.user.bot) return;
 
     let notificationText = "";
@@ -561,8 +608,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
     if (notificationText) {
         try {
-            const speed = speedSettings.get(guildId) || 1.0;
-            const audioStream = await generateVoicevoxAudio(notificationText, SPEAKER_ID, speed);
+            // Check if audio player is idle? 
+            // If we just play, it might overlap or cut off current speech. 
+            // Ideally we queue, but for now `playAudio` interrupts. Simple is fine for now as per "speak" command behavior.
+            const audioStream = await generateVoicevoxAudio(notificationText, SPEAKER_ID);
             await playAudio(guildId, audioStream);
         } catch (error) {
             console.error("Error playing join/leave notification:", error);
@@ -578,9 +627,12 @@ client.on('messageCreate', async message => {
     const autoReadState = autoReadStates.get(guildId);
     const isAutoRead = autoReadState || false;
 
+    // Check specific commands first (Skip 's', Stop All 'ss')
     if (message.content === 'ss' || message.content === 'ｓｓ') {
         const state = getGuildAudioPlayer(guildId);
+        // Clear entire queue
         state.queue = [];
+        // Stop current playback
         if (state.isPlaying) {
             state.player.stop();
         }
@@ -602,17 +654,76 @@ client.on('messageCreate', async message => {
 
     if (!isMention && !isAutoRead) return;
 
-    if (isAutoRead && !isMention) {
-        const connection = getVoiceConnection(guildId);
-        if (!connection || message.channel.id !== connection.joinConfig.channelId) {
-            return;
+    let connection = getVoiceConnection(guildId);
+    let botChannelId = null;
+    if (connection) {
+        botChannelId = connection.joinConfig.channelId;
+    }
+
+    // --- Special OCR Logic (Text Reply Only, No TTS) ---
+    if (isMention) {
+        // Case A: Reply to an image (OCR the referenced image)
+        if (message.reference && message.reference.messageId) {
+            try {
+                const referencedMsg = await message.channel.messages.fetch(message.reference.messageId);
+                if (referencedMsg.attachments.size > 0) {
+                    const imageUrl = referencedMsg.attachments.first().url;
+                    // Initial reply to indicate processing
+                    const processingMsg = await message.reply('画像を読み取っています...');
+
+                    const { text } = await processImageAttachment(imageUrl);
+
+                    // Edit reply with result
+                    if (text) {
+                        await processingMsg.edit(`OCR結果:\n${text}`);
+                    } else {
+                        await processingMsg.edit('文字を検出できませんでした。');
+                    }
+                    return; // Stop processing (No TTS)
+                }
+            } catch (err) {
+                console.error("Error fetching referenced message:", err);
+            }
+        }
+
+        // Case B: Mention outside of VC with image (OCR the attached image)
+        const isOutsideVC = !connection || (botChannelId && message.channel.id !== botChannelId);
+        if (isOutsideVC && message.attachments.size > 0) {
+            const imageUrl = message.attachments.first().url;
+            const processingMsg = await message.reply('画像を読み取っています...');
+
+            try {
+                const { text } = await processImageAttachment(imageUrl);
+                if (text) {
+                    await processingMsg.edit(`OCR結果:\n${text}`);
+                } else {
+                    await processingMsg.edit('文字を検出できませんでした。');
+                }
+            } catch (err) {
+                console.error("Error processing text-only OCR:", err);
+                await processingMsg.edit('エラーが発生しました。');
+            }
+            return; // Stop processing (No TTS)
         }
     }
 
-    // チャンネル情報を更新
+    // Strict VC Check for Auto-Read (Existing Logic)
+    // Requirement Update: Only read messages sent IN the Voice Channel (Text-in-Voice)
+    // Ignore messages from other text channels
+    if (isAutoRead && !isMention) {
+        if (!connection) return; // Bot not connected
+
+        // Check if the MESSAGE was sent in the BOT'S Voice Channel
+        if (message.channel.id !== botChannelId) {
+            return; // Message is from #general or other text channel -> Ignore
+        }
+    }
+
+    // Track channel
     lastTextChannel.set(message.guild.id, message.channel.id);
 
-    // メッセージ内容の正規化 (メンション、URL、絵文字、笑いの表現)
+    let contentToSpeak = "";
+    // Initialize with message content (stripped of mentions, URLs, custom emojis, and normalize repeated 'w')
     let baseMessageText = message.content
         .replace(/<@!?[0-9]+>/g, '') // Mentions
         .replace(/<a?:.+?:\d+>/g, '') // Custom Emojis (<:name:id> or <a:name:id>)
@@ -620,8 +731,8 @@ client.on('messageCreate', async message => {
         .replace(/w{3,}/gi, 'www') // Laughter
         .trim();
 
-    // 辞書適用
-    baseMessageText = applyDictionary(baseMessageText, message.guild.id);
+    // Apply Dictionary
+    baseMessageText = applyDictionary(baseMessageText);
 
     const speechSegments = [];
     if (baseMessageText) {
@@ -631,49 +742,37 @@ client.on('messageCreate', async message => {
     let replyText = baseMessageText;
     let processedAnyImage = false;
 
-    // 画像スキャン処理
-    // 現在のメッセージの添付ファイル + リプライ先の添付ファイル (ある場合)
-    const targetAttachments = [...message.attachments.values()];
-
-    if (message.reference && message.reference.messageId) {
-        try {
-            const referencedMessage = await message.channel.messages.fetch(message.reference.messageId);
-            if (referencedMessage.attachments.size > 0) {
-                targetAttachments.push(...referencedMessage.attachments.values());
-            }
-        } catch (err) {
-            console.error("Failed to fetch referenced message:", err);
-        }
-    }
-
-    if (targetAttachments.length > 0) {
+    // --- Image Processing ---
+    if (message.attachments.size > 0) {
         let processingMsg = null;
         if (isMention) {
             processingMsg = await message.reply("画像処理中...");
         }
 
         try {
-            // 全添付ファイルを処理
-            for (const attachment of targetAttachments) {
+            // Process all attachments
+            for (const [id, attachment] of message.attachments) {
                 if (attachment.contentType && attachment.contentType.startsWith('image/')) {
 
                     try {
-                        const result = await processImageAttachment(attachment.url, message.guild.id);
+                        const result = await processImageAttachment(attachment.url);
                         let segmentText = "";
 
                         if (isMention) {
-                            // メンション時は常に読み上げ
+                            // Mention: Always read
                             if (result.text) {
                                 segmentText = result.text;
                             } else {
-                                // 失敗時のエラー処理（必要なら）
+                                // OCR failed but mentioned -> Error notification (skip reading)
+                                // Maybe append error to reply?
                             }
                         } else if (isAutoRead) {
-                            // 自動読み上げ時
+                            // Auto-Read
                             if (result.isQuote && result.text) {
                                 segmentText = result.text;
                             } else {
-                                // Quote以外は「添付ファイル」として処理
+                                // Non-Quote -> "Attachment" (append to current flow)
+                                // Logic: Just say "添付ファイル"
                                 segmentText = "添付ファイル";
                             }
                         }
@@ -681,12 +780,12 @@ client.on('messageCreate', async message => {
                         if (segmentText) {
                             speechSegments.push(segmentText);
                             if (replyText) replyText += "\n";
-                            replyText += segmentText;
+                            replyText += segmentText; // Accumulate for text reply
                             processedAnyImage = true;
                         }
 
                     } catch (ocrError) {
-                        console.error(`OCR Error for attachment ${attachment.id}:`, ocrError);
+                        console.error(`OCR Error for attachment ${id}:`, ocrError);
                         if (isAutoRead) {
                             speechSegments.push("添付ファイル");
                             processedAnyImage = true;
@@ -705,7 +804,8 @@ client.on('messageCreate', async message => {
     }
 
     // Auto-join logic
-    let connection = getVoiceConnection(message.guild.id);
+    // connection variable already declared at top
+    connection = getVoiceConnection(message.guild.id);
     if (!connection) {
         if (message.member && message.member.voice.channel) {
             try {
@@ -724,12 +824,13 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // 自動読み上げの制約確認は冒頭で実行済み
+    // Auto-read constraint: Check if user is in the SAME voice channel (Already checked at top, but verify connection exists for play)
+    // If bot disconnected mid-process, playAudio will throw error, which is caught.
 
     try {
-        // 返信処理 (メンション時)
+        // Reply FIRST (if mention)
         if (isMention) {
-            // 長すぎる場合は省略
+            // Truncate reply if too long
             let finalReply = `文章：${replyText}`;
             if (finalReply.length > 2000) {
                 finalReply = finalReply.substring(0, 1997) + "...";
@@ -737,15 +838,15 @@ client.on('messageCreate', async message => {
             await message.reply(finalReply);
         }
 
-        // セグメントごとの読み上げキュー登録
+        // Queue all segments
         for (const segment of speechSegments) {
-            // ローカルVoicevox等の制限に合わせた長さ調整処理（簡略化）
+            // Further truncate individual segments for TTS limit if needed? (VOICEVOX has limits but let's assume reasonable chunks)
+            // Normalizing length for TTS call
             let text = segment;
             if (text.length > 200) text = text.substring(0, 197) + "...";
 
             if (text) {
-                const speed = speedSettings.get(message.guild.id) || 1.0;
-                const audioStream = await generateVoicevoxAudio(text, SPEAKER_ID, speed);
+                const audioStream = await generateVoicevoxAudio(text, SPEAKER_ID);
                 await playAudio(message.guild.id, audioStream);
             }
         }
@@ -761,7 +862,7 @@ client.on('interactionCreate', async interaction => {
         if (!interaction.isChatInputCommand()) return;
         const { commandName } = interaction;
 
-        // チャンネル追跡
+        // Track channel
         lastTextChannel.set(interaction.guild.id, interaction.channel.id);
 
         if (commandName === 'join') {
@@ -773,7 +874,7 @@ client.on('interactionCreate', async interaction => {
                     guildId: voiceChannel.guild.id,
                     adapterCreator: voiceChannel.guild.voiceAdapterCreator,
                 });
-                // デフォルト: 自動読み上げ OFF
+                // Default: Auto-read OFF
                 autoReadStates.set(interaction.guild.id, false);
                 await interaction.reply("接続しました！");
             } catch (error) {
@@ -788,32 +889,27 @@ client.on('interactionCreate', async interaction => {
         }
         else if (commandName === 'dict') {
             const sub = interaction.options.getSubcommand();
-            const guildId = interaction.guild.id;
-
-            // 辞書データ初期化
-            if (!dictionary[guildId]) dictionary[guildId] = {};
-
             if (sub === 'add') {
                 const word = interaction.options.getString('word');
                 const reading = interaction.options.getString('reading');
-                dictionary[guildId][word] = reading;
+                dictionary[word] = reading;
                 saveDictionary();
                 await interaction.reply(`辞書に登録しました: ${word} -> ${reading}`);
             } else if (sub === 'remove') {
                 const word = interaction.options.getString('word');
-                if (dictionary[guildId][word]) {
-                    delete dictionary[guildId][word];
+                if (dictionary[word]) {
+                    delete dictionary[word];
                     saveDictionary();
                     await interaction.reply(`辞書から削除しました: ${word}`);
                 } else {
                     await interaction.reply(`その単語は登録されていません: ${word}`);
                 }
             } else if (sub === 'list') {
-                const entries = Object.entries(dictionary[guildId]).map(([k, v]) => `${k} -> ${v}`);
+                const entries = Object.entries(dictionary).map(([k, v]) => `${k} -> ${v}`);
+
                 if (entries.length === 0) {
                     await interaction.reply({ content: "辞書は空です。", ephemeral: true });
                 } else {
-                    // 2000文字制限対応（分割）
                     const chunks = [];
                     let currentChunk = "登録単語一覧:\n";
                     for (const entry of entries) {
@@ -823,7 +919,7 @@ client.on('interactionCreate', async interaction => {
                         }
                         currentChunk += entry + "\n";
                     }
-                    chunks.push(currentChunk);
+                    if (currentChunk) chunks.push(currentChunk);
 
                     await interaction.reply({ content: chunks[0], ephemeral: true });
                     for (let i = 1; i < chunks.length; i++) {
@@ -831,10 +927,17 @@ client.on('interactionCreate', async interaction => {
                     }
                 }
             }
-        } else if (commandName === 'speed') {
-            const speed = interaction.options.getNumber('value');
-            speedSettings.set(interaction.guild.id, speed);
-            await interaction.reply(`読み上げ速度を ${speed} に設定しました。`);
+        }
+        else if (commandName === 'ping') {
+            const sent = await interaction.reply({ content: 'Pinging...', fetchReply: true });
+            const latency = sent.createdTimestamp - interaction.createdTimestamp;
+
+            const embed = new EmbedBuilder()
+                .setColor(0x0099FF)
+                .setTitle('Pong! 🏓')
+                .setDescription(`${latency}ms`);
+
+            await interaction.editReply({ content: '', embeds: [embed] });
         }
         else if (commandName === 'leave') {
             const connection = getVoiceConnection(interaction.guild.id);
@@ -859,7 +962,7 @@ client.on('interactionCreate', async interaction => {
                     return interaction.editReply("添付ファイルが画像ではありません。");
                 }
                 try {
-                    const result = await processImageAttachment(image.url, interaction.guild.id);
+                    const result = await processImageAttachment(image.url);
                     textToSpeak = result.text;
                     isFromImage = true;
                     if (!textToSpeak) return interaction.editReply("エラーが発生しました: 画像から文字を認識できませんでした。");
@@ -877,7 +980,7 @@ client.on('interactionCreate', async interaction => {
 
             let connection = getVoiceConnection(interaction.guild.id);
             if (!connection) {
-                // 自動参加ロジック
+                // Auto-join logic
                 if (interaction.member && interaction.member.voice.channel) {
                     try {
                         connection = joinVoiceChannel({
@@ -900,8 +1003,7 @@ client.on('interactionCreate', async interaction => {
                 }
                 await interaction.editReply(replyContent);
 
-                const speed = speedSettings.get(interaction.guild.id) || 1.0;
-                const audioStream = await generateVoicevoxAudio(textToSpeak, SPEAKER_ID, speed);
+                const audioStream = await generateVoicevoxAudio(textToSpeak, SPEAKER_ID);
                 await playAudio(interaction.guild.id, audioStream);
 
             } catch (error) {
