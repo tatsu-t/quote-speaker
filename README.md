@@ -70,6 +70,15 @@ Discordボイスチャンネルでテキスト読み上げ（TTS）と画像内�
 *   `ss` (または `ｓｓ`): 読み上げを即時停止し、待機キューを全て削除します。
 *   `;` (セミコロン) で始まるメッセージ: 読み上げから除外されます（コメントアウト）。
 
+## 謝辞 / Acknowledgements
+
+このプロジェクトは以下の素晴らしいサービスとライブラリを使用しています。
+
+*   **VOICEVOX**: 無料で使える中品質なテキスト読み上げソフトウェア
+*   **TTS Quest (WEB版VOICEVOX API)**:
+    *   外部APIとして `tts.quest` を利用しています。
+    *   詳細: [https://voicevox.su-shiki.com/su-shikiapis/#step3](https://voicevox.su-shiki.com/su-shikiapis/#step3)
+
 ## ライセンス
 
-[MIT License](LICENSE)
+本プロジェクトは **MIT License** の下で公開されています。詳細については [LICENSE](LICENSE) ファイルを参照してください。
