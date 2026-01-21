@@ -689,13 +689,17 @@ client.on('messageCreate', async message => {
     let connection = getVoiceConnection(guildId);
 
     // Filter Logic:
-    // If NOT targeted and NOT autoread:
-    //  - If Bot is NOT in VC: Return (Ignore)
-    //  - If Bot IS in VC but NO images: Return (Ignore pure text)
-    //  - If Bot IS in VC and HAS images: Proceed (to check if it's a Quote)
-    if (!isMention && !isAutoRead) {
+    // If NOT targeted (i.e. AutoRead or Quote detection):
+    // 1. Must have a Voice Connection.
+    // 2. Must be in the Bound Text Channel.
+    // 3. If AutoRead is OFF, must have potential images (Quote check).
+    if (!isMention) {
         if (!connection) return;
-        if (!hasEvaluationTargets) return;
+
+        const boundChannelId = boundTextChannels.get(guildId);
+        if (boundChannelId && message.channel.id !== boundChannelId) return;
+
+        if (!isAutoRead && !hasEvaluationTargets) return;
     }
 
     let botChannelId = null;
