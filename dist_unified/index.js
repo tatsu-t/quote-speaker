@@ -623,7 +623,28 @@ client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
     const guildId = message.guild.id;
-    const isMention = message.mentions.has(client.user);
+
+    // Strict Target Check
+    // 1. Ignore @everyone and @here
+    if (message.mentions.everyone) return;
+
+    // 2. Check for Direct Mention (User Mention Only)
+    const isDirectMention = message.mentions.has(client.user);
+
+    // 3. Check for Reply to Bot
+    let isReplyToBot = false;
+    if (message.reference && message.reference.messageId) {
+        try {
+            const referencedMsg = await message.channel.messages.fetch(message.reference.messageId);
+            if (referencedMsg.author.id === client.user.id) {
+                isReplyToBot = true;
+            }
+        } catch (e) {
+            // Ignore fetch error
+        }
+    }
+
+    const isTargeted = isDirectMention || isReplyToBot;
     const autoReadState = autoReadStates.get(guildId);
     const isAutoRead = autoReadState || false;
 
