@@ -651,10 +651,14 @@ client.on('messageCreate', async message => {
     lastTextChannel.set(message.guild.id, message.channel.id);
 
     let contentToSpeak = "";
-    let baseMessageText = message.content
+    // Extract URLs before removing them
+    const urlRegex = /https?:\/\/\S+/g;
+    const urls = message.content.match(urlRegex) || [];
+
+    baseMessageText = message.content
         .replace(/<@!?[0-9]+>/g, '')
         .replace(/<a?:.+?:\d+>/g, '')
-        .replace(/https?:\/\/\S+/g, '')
+        .replace(urlRegex, '') // Remove URLs from spoken text
         .replace(/w{3,}/gi, 'www')
         .trim();
 
@@ -668,45 +672,73 @@ client.on('messageCreate', async message => {
     let replyText = baseMessageText;
     let processedAnyImage = false;
 
+    const imagesToProcess = [];
+
+    // 1. Attachments
     if (message.attachments.size > 0) {
+        for (const [id, attachment] of message.attachments) {
+            if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+                imagesToProcess.push(attachment.url);
+            }
+        }
+    }
+
+    // 2. Embeds / URLs
+    if (urls.length > 0) {
+        for (const url of urls) {
+            // Simple check: strict image extensions or known generator domains
+            if (/\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(url) || url.includes('quote.tksaba.com')) {
+                imagesToProcess.push(url);
+            }
+        }
+    }
+
+    // 3. Discord Embeds (if present immediately)
+    if (message.embeds.length > 0) {
+        for (const embed of message.embeds) {
+            if (embed.image) imagesToProcess.push(embed.image.url);
+            else if (embed.thumbnail) imagesToProcess.push(embed.thumbnail.url);
+        }
+    }
+
+    if (imagesToProcess.length > 0) {
         let processingMsg = null;
         if (isTargeted) {
             processingMsg = await message.reply("画像処理中...");
         }
 
         try {
-            for (const [id, attachment] of message.attachments) {
-                if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+            for (const imageUrl of imagesToProcess) {
+                try {
+                    const result = await processImageAttachment(imageUrl);
+                    let segmentText = "";
 
-                    try {
-                        const result = await processImageAttachment(attachment.url);
-                        let segmentText = "";
-
-                        if (isTargeted) {
-                            if (result.text) {
-                                segmentText = result.text;
-                            }
-                        } else if (isAutoRead) {
-                            if (result.isQuote && result.text) {
-                                segmentText = result.text;
-                            } else {
-                                segmentText = "添付ファイル";
-                            }
+                    if (isTargeted) {
+                        if (result.text) {
+                            segmentText = result.text;
+                        } else {
+                            // OCR failed but mentioned
                         }
-
-                        if (segmentText) {
-                            speechSegments.push(segmentText);
-                            if (replyText) replyText += "\n";
-                            replyText += segmentText;
-                            processedAnyImage = true;
+                    } else if (isAutoRead) {
+                        if (result.isQuote && result.text) {
+                            segmentText = result.text;
+                        } else {
+                            segmentText = "添付ファイル";
                         }
+                    }
 
-                    } catch (ocrError) {
-                        console.error(`OCR Error for attachment ${id}:`, ocrError);
-                        if (isAutoRead) {
-                            speechSegments.push("添付ファイル");
-                            processedAnyImage = true;
-                        }
+                    if (segmentText) {
+                        speechSegments.push(segmentText);
+                        if (replyText) replyText += "\n";
+                        replyText += segmentText;
+                        processedAnyImage = true;
+                    }
+
+                } catch (ocrError) {
+                    console.error(`OCR Error for image ${imageUrl}:`, ocrError);
+                    if (isAutoRead) {
+                        speechSegments.push("添付ファイル");
+                        processedAnyImage = true;
                     }
                 }
             }
@@ -868,7 +900,7 @@ client.on('interactionCreate', async interaction => {
                     return interaction.editReply("添付ファイルが画像ではありません。");
                 }
                 try {
-                    const result = await processImageAttachment(image.url);
+                    const result = await processImageAttachment(imageUrl);
                     textToSpeak = result.text;
                     isFromImage = true;
                     if (!textToSpeak) return interaction.editReply("エラーが発生しました: 画像から文字を認識できませんでした。");
