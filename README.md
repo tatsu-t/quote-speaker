@@ -1,7 +1,7 @@
 # QuoteSpeaker Bot 🗣️
 
 Voicevoxを使用したDiscord読み上げBotです。画像OCR機能、辞書機能、自動読み上げ機能を搭載しています。
-VPS（Bot本体）と自宅PC（VOICEVOXエンジン）を連携させるハイブリッド構成で動作します。
+利用環境に合わせて「分散構成（推奨）」または「統一構成」を選択できます。
 
 ## 機能 🚀
 
@@ -9,7 +9,7 @@ VPS（Bot本体）と自宅PC（VOICEVOXエンジン）を連携させるハイ�
   - Voicevox (Zundamon / Speaker ID: 3) を使用。
   - テキストチャットの内容をボイスチャットで読み上げ。
   - `/autoread` で読み上げのON/OFF切り替え。
-  - 外部API (`tts.quest`) を優先利用し、リソースがない場合やAPI制限時に自宅PCのエンジンへフォールバック。
+  - 外部API (`tts.quest`) を優先利用し、リソースがない場合やAPI制限時に自宅PC（またはローカル）のエンジンへフォールバック。
 
 - **画像読み上げ (OCR)**
   - 画像が添付された場合、Google Vision APIで文字を認識して読み上げ。
@@ -25,29 +25,20 @@ VPS（Bot本体）と自宅PC（VOICEVOXエンジン）を連携させるハイ�
 
 ## システム構成 🏗️
 
-このBotは以下の2つの環境に分散配置することを想定しています。
+### A. 分散構成（推奨）
+VPSと自宅PCを連携させ、重い処理（VOICEVOX）を自宅PCにオフロードします。
+- **VPS (`dist_vps`)**: Bot本体。軽量。自宅PCへFRP等で接続。
+- **自宅PC (`dist_home`)**: VOICEVOXエンジン。FRPでポートをVPSへ転送。
 
-1. **VPS (Bot本体)**: Discord Botが動作。FRPクライアントからの接続を受け付ける（またはVPN/Tunnel経由で自宅PCへ接続）。
-2. **自宅PC (VOICEVOX)**: 高負荷な音声合成エンジンをDockerで実行。FRP等を用いてポートをVPSへ公開。
-
-```mermaid
-graph LR
-    User[Discord User] --> VPS[VPS: Bot Container]
-    VPS -- TTS Request --> API[tts.quest API]
-    VPS -. Fallback .-> Tunnel[FRP Tunnel :5000]
-    Tunnel --> HomePC[Home PC: Voicevox Container]
-```
+### B. 統一構成
+1つのマシン（PCまたは高性能VPS）ですべてを動作させます。
+- **統一 (`dist_unified`)**: BotとVOICEVOXをdocker-composeで一括管理。手軽ですがマシンスペックが必要です。
 
 ## セットアップ手順 🛠️
 
-### 前提条件
-- Docker & Docker Compose
-- Discord Bot Token
-- Google Cloud Vision API Key
-- FRP (Fast Reverse Proxy) または類似のトンネリング環境
+### A. 分散構成の場合
 
-### 1. VPS側 (`/dist_vps`)
-
+#### 1. VPS側 (`/dist_vps`)
 1. `dist_vps` フォルダをVPSに配置します。
 2. `.env` ファイルを作成・編集します。
    ```bash
@@ -61,8 +52,7 @@ graph LR
    docker-compose up -d --build
    ```
 
-### 2. 自宅PC側 (`/dist_home`)
-
+#### 2. 自宅PC側 (`/dist_home`)
 1. `dist_home` フォルダを自宅PCに配置します。
 2. VOICEVOXエンジンを起動します。
    ```bash
@@ -72,6 +62,22 @@ graph LR
    - ローカルポート: `50021`
    - リモートポート: `5000` (VPS側から見えるポート)
 4. FRPクライアントを起動してトンネルを確立します。
+
+---
+
+### B. 統一構成の場合 (`/dist_unified`)
+
+1. `dist_unified` フォルダを配置します。
+2. `.env` ファイルを作成・編集します。
+   ```bash
+   DISCORD_TOKEN=your_token_here
+   GOOGLE_VISION_API_KEY=your_key_here
+   VOICEVOX_API_KEY=your_voicevox_api_key_here
+   ```
+3. 起動します（初回はVoicevoxのダウンロードに時間がかかります）。
+   ```bash
+   docker-compose up -d --build
+   ```
 
 ## コマンド一覧 📜
 
@@ -90,6 +96,7 @@ graph LR
 
 ## ディレクトリ構造
 
-- `dist_vps/`: VPSデプロイ用ファイル一式
-- `dist_home/`: 自宅PCデプロイ用ファイル一式
+- `dist_vps/`: VPSデプロイ用 (分散構成-Bot側)
+- `dist_home/`: 自宅PCデプロイ用 (分散構成-Voicevox側)
+- `dist_unified/`: 統一デプロイ用 (全て入り)
 - `index.js`: (開発用) オリジナルソースコード
