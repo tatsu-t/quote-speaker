@@ -672,12 +672,28 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // Ignore messages starting with ;
-    if (message.content.startsWith(';') || message.content.startsWith('；')) return;
+    // Extract URLs early to check for images
+    const urlRegex = /https?:\/\/\S+/g;
+    const urls = message.content.match(urlRegex) || [];
 
-    if (!isMention && !isAutoRead) return;
+    // Check for potential images
+    const hasAttachments = message.attachments.size > 0;
+    const hasEmbeds = message.embeds.length > 0;
+    const hasImageUrls = urls.some(url => /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(url) || url.includes('quote.tksaba.com'));
+    const hasEvaluationTargets = hasAttachments || hasEmbeds || hasImageUrls;
 
     let connection = getVoiceConnection(guildId);
+
+    // Filter Logic:
+    // If NOT targeted and NOT autoread:
+    //  - If Bot is NOT in VC: Return (Ignore)
+    //  - If Bot IS in VC but NO images: Return (Ignore pure text)
+    //  - If Bot IS in VC and HAS images: Proceed (to check if it's a Quote)
+    if (!isMention && !isAutoRead) {
+        if (!connection) return;
+        if (!hasEvaluationTargets) return;
+    }
+
     let botChannelId = null;
     if (connection) {
         botChannelId = connection.joinConfig.channelId;
@@ -746,15 +762,11 @@ client.on('messageCreate', async message => {
     lastTextChannel.set(message.guild.id, message.channel.id);
 
     let contentToSpeak = "";
-    // Extract URLs before removing them
-    const urlRegex = /https?:\/\/\S+/g;
-    const urls = message.content.match(urlRegex) || [];
-
     // Initialize with message content (stripped of mentions, URLs, custom emojis, and normalize repeated 'w')
     let baseMessageText = message.content
         .replace(/<@!?[0-9]+>/g, '') // Mentions
         .replace(/<a?:.+?:\d+>/g, '') // Custom Emojis (<:name:id> or <a:name:id>)
-        .replace(urlRegex, '') // URLs
+        .replace(urlRegex, '') // Apply the regex defined earlier
         .replace(/w{3,}/gi, 'www') // Laughter
         .trim();
 
@@ -762,7 +774,8 @@ client.on('messageCreate', async message => {
     baseMessageText = applyDictionary(baseMessageText);
 
     const speechSegments = [];
-    if (baseMessageText) {
+    // Only speak text if Targeted or AutoRead is ON
+    if (baseMessageText && (isMention || isAutoRead)) {
         speechSegments.push(baseMessageText);
     }
 
@@ -819,11 +832,12 @@ client.on('messageCreate', async message => {
                         } else {
                             // OCR failed but mentioned
                         }
-                    } else if (isAutoRead) {
+                    } else {
+                        // Auto-Read or "Quote Override" (Even if AutoRead is OFF)
                         if (result.isQuote && result.text) {
-                            segmentText = result.text;
-                        } else {
-                            segmentText = "添付ファイル";
+                            segmentText = result.text; // Always read quotes if in VC
+                        } else if (isAutoRead) {
+                            segmentText = "添付ファイル"; // Auto-read non-quotes
                         }
                     }
 
