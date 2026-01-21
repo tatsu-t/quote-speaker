@@ -587,9 +587,28 @@ client.on('messageCreate', async message => {
 
     if (message.content.startsWith(';') || message.content.startsWith('；')) return;
 
-    if (!isTargeted && !isAutoRead) return;
+    // Extract URLs early to check for images
+    const urlRegex = /https?:\/\/\S+/g;
+    const urls = message.content.match(urlRegex) || [];
+
+    // Check for potential images
+    const hasAttachments = message.attachments.size > 0;
+    const hasEmbeds = message.embeds.length > 0;
+    const hasImageUrls = urls.some(url => /\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(url) || url.includes('quote.tksaba.com'));
+    const hasEvaluationTargets = hasAttachments || hasEmbeds || hasImageUrls;
 
     let connection = getVoiceConnection(guildId);
+
+    // Filter Logic:
+    // If NOT targeted and NOT autoread:
+    //  - If Bot is NOT in VC: Return (Ignore)
+    //  - If Bot IS in VC but NO images: Return (Ignore pure text)
+    //  - If Bot IS in VC and HAS images: Proceed (to check if it's a Quote)
+    if (!isTargeted && !isAutoRead) {
+        if (!connection) return;
+        if (!hasEvaluationTargets) return;
+    }
+
     let botChannelId = null;
     if (connection) {
         botChannelId = connection.joinConfig.channelId;
@@ -650,22 +669,18 @@ client.on('messageCreate', async message => {
 
     lastTextChannel.set(message.guild.id, message.channel.id);
 
-    let contentToSpeak = "";
-    // Extract URLs before removing them
-    const urlRegex = /https?:\/\/\S+/g;
-    const urls = message.content.match(urlRegex) || [];
-
-    baseMessageText = message.content
+    let baseMessageText = message.content
         .replace(/<@!?[0-9]+>/g, '')
         .replace(/<a?:.+?:\d+>/g, '')
-        .replace(urlRegex, '') // Remove URLs from spoken text
+        .replace(urlRegex, '') // Use the regex we defined earlier
         .replace(/w{3,}/gi, 'www')
         .trim();
 
     baseMessageText = applyDictionary(baseMessageText);
 
     const speechSegments = [];
-    if (baseMessageText) {
+    // Only speak text if Targeted or AutoRead is ON
+    if (baseMessageText && (isTargeted || isAutoRead)) {
         speechSegments.push(baseMessageText);
     }
 
@@ -722,11 +737,12 @@ client.on('messageCreate', async message => {
                         } else {
                             // OCR failed but mentioned
                         }
-                    } else if (isAutoRead) {
+                    } else {
+                        // Auto-Read or "Quote Override" (Even if AutoRead is OFF)
                         if (result.isQuote && result.text) {
-                            segmentText = result.text;
-                        } else {
-                            segmentText = "添付ファイル";
+                            segmentText = result.text; // Always read quotes if in VC
+                        } else if (isAutoRead) {
+                            segmentText = "添付ファイル"; // Auto-read non-quotes
                         }
                     }
 
