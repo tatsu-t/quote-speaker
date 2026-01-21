@@ -746,11 +746,15 @@ client.on('messageCreate', async message => {
     lastTextChannel.set(message.guild.id, message.channel.id);
 
     let contentToSpeak = "";
+    // Extract URLs before removing them
+    const urlRegex = /https?:\/\/\S+/g;
+    const urls = message.content.match(urlRegex) || [];
+
     // Initialize with message content (stripped of mentions, URLs, custom emojis, and normalize repeated 'w')
     let baseMessageText = message.content
         .replace(/<@!?[0-9]+>/g, '') // Mentions
         .replace(/<a?:.+?:\d+>/g, '') // Custom Emojis (<:name:id> or <a:name:id>)
-        .replace(/https?:\/\/\S+/g, '') // URLs
+        .replace(urlRegex, '') // URLs
         .replace(/w{3,}/gi, 'www') // Laughter
         .trim();
 
@@ -766,53 +770,73 @@ client.on('messageCreate', async message => {
     let processedAnyImage = false;
 
     // --- Image Processing ---
+    const imagesToProcess = [];
+
+    // 1. Attachments
     if (message.attachments.size > 0) {
+        for (const [id, attachment] of message.attachments) {
+            if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+                imagesToProcess.push(attachment.url);
+            }
+        }
+    }
+
+    // 2. Embeds / URLs
+    if (urls.length > 0) {
+        for (const url of urls) {
+            // Simple check: strict image extensions or known generator domains
+            if (/\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(url) || url.includes('quote.tksaba.com')) {
+                imagesToProcess.push(url);
+            }
+        }
+    }
+
+    // 3. Discord Embeds (if present immediately)
+    if (message.embeds.length > 0) {
+        for (const embed of message.embeds) {
+            if (embed.image) imagesToProcess.push(embed.image.url);
+            else if (embed.thumbnail) imagesToProcess.push(embed.thumbnail.url);
+        }
+    }
+
+    if (imagesToProcess.length > 0) {
         let processingMsg = null;
         if (isMention) {
             processingMsg = await message.reply("画像処理中...");
         }
 
         try {
-            // Process all attachments
-            for (const [id, attachment] of message.attachments) {
-                if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+            for (const imageUrl of imagesToProcess) {
+                try {
+                    const result = await processImageAttachment(imageUrl);
+                    let segmentText = "";
 
-                    try {
-                        const result = await processImageAttachment(attachment.url);
-                        let segmentText = "";
-
-                        if (isMention) {
-                            // Mention: Always read
-                            if (result.text) {
-                                segmentText = result.text;
-                            } else {
-                                // OCR failed but mentioned -> Error notification (skip reading)
-                                // Maybe append error to reply?
-                            }
-                        } else if (isAutoRead) {
-                            // Auto-Read
-                            if (result.isQuote && result.text) {
-                                segmentText = result.text;
-                            } else {
-                                // Non-Quote -> "Attachment" (append to current flow)
-                                // Logic: Just say "添付ファイル"
-                                segmentText = "添付ファイル";
-                            }
+                    if (isMention) {
+                        if (result.text) {
+                            segmentText = result.text;
+                        } else {
+                            // OCR failed but mentioned
                         }
-
-                        if (segmentText) {
-                            speechSegments.push(segmentText);
-                            if (replyText) replyText += "\n";
-                            replyText += segmentText; // Accumulate for text reply
-                            processedAnyImage = true;
+                    } else if (isAutoRead) {
+                        if (result.isQuote && result.text) {
+                            segmentText = result.text;
+                        } else {
+                            segmentText = "添付ファイル";
                         }
+                    }
 
-                    } catch (ocrError) {
-                        console.error(`OCR Error for attachment ${id}:`, ocrError);
-                        if (isAutoRead) {
-                            speechSegments.push("添付ファイル");
-                            processedAnyImage = true;
-                        }
+                    if (segmentText) {
+                        speechSegments.push(segmentText);
+                        if (replyText) replyText += "\n";
+                        replyText += segmentText;
+                        processedAnyImage = true;
+                    }
+
+                } catch (ocrError) {
+                    console.error(`OCR Error for image ${imageUrl}:`, ocrError);
+                    if (isAutoRead) {
+                        speechSegments.push("添付ファイル");
+                        processedAnyImage = true;
                     }
                 }
             }
