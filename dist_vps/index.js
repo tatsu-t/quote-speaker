@@ -539,7 +539,28 @@ client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
     const guildId = message.guild.id;
-    const isMention = message.mentions.has(client.user);
+
+    // Strict Target Check
+    // 1. Ignore @everyone and @here
+    if (message.mentions.everyone) return;
+
+    // 2. Check for Direct Mention (User Mention Only)
+    const isDirectMention = message.mentions.has(client.user);
+
+    // 3. Check for Reply to Bot
+    let isReplyToBot = false;
+    if (message.reference && message.reference.messageId) {
+        try {
+            const referencedMsg = await message.channel.messages.fetch(message.reference.messageId);
+            if (referencedMsg.author.id === client.user.id) {
+                isReplyToBot = true;
+            }
+        } catch (e) {
+            // Ignore fetch error
+        }
+    }
+
+    const isTargeted = isDirectMention || isReplyToBot;
     const autoReadState = autoReadStates.get(guildId);
     const isAutoRead = autoReadState || false;
 
@@ -564,7 +585,7 @@ client.on('messageCreate', async message => {
 
     if (message.content.startsWith(';') || message.content.startsWith('；')) return;
 
-    if (!isMention && !isAutoRead) return;
+    if (!isTargeted && !isAutoRead) return;
 
     let connection = getVoiceConnection(guildId);
     let botChannelId = null;
@@ -573,7 +594,7 @@ client.on('messageCreate', async message => {
     }
 
     // --- Special OCR Logic (Text Reply Only, No TTS) ---
-    if (isMention) {
+    if (isTargeted) {
         // Case A: Reply to an image (OCR the referenced image)
         if (message.reference && message.reference.messageId) {
             try {
@@ -617,7 +638,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    if (isAutoRead && !isMention) {
+    if (isAutoRead && !isTargeted) {
         if (!connection) return;
 
         if (message.channel.id !== botChannelId) {
@@ -647,7 +668,7 @@ client.on('messageCreate', async message => {
 
     if (message.attachments.size > 0) {
         let processingMsg = null;
-        if (isMention) {
+        if (isTargeted) {
             processingMsg = await message.reply("画像処理中...");
         }
 
@@ -659,7 +680,7 @@ client.on('messageCreate', async message => {
                         const result = await processImageAttachment(attachment.url);
                         let segmentText = "";
 
-                        if (isMention) {
+                        if (isTargeted) {
                             if (result.text) {
                                 segmentText = result.text;
                             }
@@ -693,7 +714,7 @@ client.on('messageCreate', async message => {
     }
 
     if (speechSegments.length === 0) {
-        if (isMention && !processedAnyImage) return message.reply("読み上げるテキストか画像を送ってください。");
+        if (isTargeted && !processedAnyImage) return message.reply("読み上げるテキストか画像を送ってください。");
         return;
     }
 
@@ -708,17 +729,17 @@ client.on('messageCreate', async message => {
                     adapterCreator: message.guild.voiceAdapterCreator,
                 });
             } catch (joinError) {
-                if (isMention) return message.reply("エラー: ボイスチャンネルへの参加に失敗しました。");
+                if (isTargeted) return message.reply("エラー: ボイスチャンネルへの参加に失敗しました。");
                 return;
             }
         } else {
-            if (isMention) return message.reply("ボイスチャンネルに参加してからメンションしてください。");
+            if (isTargeted) return message.reply("ボイスチャンネルに参加してからメンションしてください。");
             return;
         }
     }
 
     try {
-        if (isMention) {
+        if (isTargeted) {
             let finalReply = `文章：${replyText}`;
             if (finalReply.length > 2000) {
                 finalReply = finalReply.substring(0, 1997) + "...";
@@ -738,7 +759,7 @@ client.on('messageCreate', async message => {
 
     } catch (error) {
         console.error(error);
-        if (isMention) message.reply(`エラー: ${error.message}`);
+        if (isTargeted) message.reply(`エラー: ${error.message}`);
     }
 });
 
