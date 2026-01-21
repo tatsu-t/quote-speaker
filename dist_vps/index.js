@@ -107,7 +107,7 @@ async function processImageAttachment(imageUrl) {
 
         // Check if image is a "Quote" image based on branding text
         const fullText = annotations[0].description;
-        const isQuoteImage = /Make\s*it\s*a\s*Quote|Quote\s*Maker/i.test(fullText);
+        const isQuoteImage = /Make\s*it\s*a\s*Quote|Quote\s*Maker|Fake\s*Quote\s*Maker/i.test(fullText);
         console.log(`Is Quote Image: ${isQuoteImage}`);
 
         const filteredWords = words.filter(word => {
@@ -175,6 +175,8 @@ async function processImageAttachment(imageUrl) {
                 // Rule A: Drop branding
                 if (/Make[ \t]*it[ \t]*a[ \t]*Quote/i.test(lineText)) continue;
                 if (/Quote[ \t]*Maker/i.test(lineText)) continue;
+                if (/Fake[ \t]*Quote[ \t]*Maker/i.test(lineText)) continue;
+                if (/^\(Fake\)$/i.test(lineText.trim())) continue;
 
                 // Rule B: Drop lines starting with specific signature chars
                 if (/^[-—|]/.test(lineText)) continue;
