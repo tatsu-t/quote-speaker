@@ -23,6 +23,7 @@ const client = new Client({
 
 // Track the last active text channel for each guild to send auto-leave notifications
 const lastTextChannel = new Map();
+const boundTextChannels = new Map(); // Track channel where session started (join/autoread)
 // Track auto-read mode state for each guild (Default: OFF)
 const autoReadStates = new Map();
 
@@ -833,6 +834,7 @@ client.on('interactionCreate', async interaction => {
                     adapterCreator: voiceChannel.guild.voiceAdapterCreator,
                 });
                 autoReadStates.set(interaction.guild.id, false);
+                boundTextChannels.set(interaction.guild.id, interaction.channel.id); // Bind on join
                 await interaction.reply("接続しました！");
             } catch (error) {
                 await interaction.reply({ content: "エラーが発生しました: 接続に失敗しました。", ephemeral: true });
@@ -842,6 +844,7 @@ client.on('interactionCreate', async interaction => {
             const currentState = autoReadStates.get(interaction.guild.id) || false;
             const newState = !currentState;
             autoReadStates.set(interaction.guild.id, newState);
+            boundTextChannels.set(interaction.guild.id, interaction.channel.id); // Bind on autoread toggle
             await interaction.reply(`読み上げモードを ${newState ? 'ON' : 'OFF'} にしました。`);
         }
         else if (commandName === 'dict') {
@@ -900,6 +903,7 @@ client.on('interactionCreate', async interaction => {
             const connection = getVoiceConnection(interaction.guild.id);
             if (connection) {
                 connection.destroy();
+                boundTextChannels.delete(interaction.guild.id);
                 await interaction.reply("切断しました。");
             } else {
                 await interaction.reply({ content: "ボイスチャンネルに接続していません。", ephemeral: true });
@@ -919,7 +923,7 @@ client.on('interactionCreate', async interaction => {
                     return interaction.editReply("添付ファイルが画像ではありません。");
                 }
                 try {
-                    const result = await processImageAttachment(imageUrl);
+                    const result = await processImageAttachment(image.url);
                     textToSpeak = result.text;
                     isFromImage = true;
                     if (!textToSpeak) return interaction.editReply("エラーが発生しました: 画像から文字を認識できませんでした。");
@@ -940,11 +944,13 @@ client.on('interactionCreate', async interaction => {
                 // Auto-join logic
                 if (interaction.member && interaction.member.voice.channel) {
                     try {
-                        connection = joinVoiceChannel({
+                        joinVoiceChannel({
                             channelId: interaction.member.voice.channel.id,
                             guildId: interaction.guild.id,
                             adapterCreator: interaction.guild.voiceAdapterCreator,
                         });
+                        connection = getVoiceConnection(interaction.guild.id); // Refresh connection
+                        boundTextChannels.set(interaction.guild.id, interaction.channel.id); // Bind on auto-join
                     } catch (joinError) {
                         return interaction.editReply("エラーが発生しました: ボイスチャンネルへの参加に失敗しました。");
                     }
