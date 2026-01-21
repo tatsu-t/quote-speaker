@@ -770,13 +770,13 @@ client.on('messageCreate', async message => {
     let processedAnyImage = false;
 
     // --- Image Processing ---
-    const imagesToProcess = [];
+    const uniqueImageUrls = new Set();
 
     // 1. Attachments
     if (message.attachments.size > 0) {
         for (const [id, attachment] of message.attachments) {
             if (attachment.contentType && attachment.contentType.startsWith('image/')) {
-                imagesToProcess.push(attachment.url);
+                uniqueImageUrls.add(attachment.url);
             }
         }
     }
@@ -786,7 +786,7 @@ client.on('messageCreate', async message => {
         for (const url of urls) {
             // Simple check: strict image extensions or known generator domains
             if (/\.(png|jpg|jpeg|gif|webp)(\?.*)?$/i.test(url) || url.includes('quote.tksaba.com')) {
-                imagesToProcess.push(url);
+                uniqueImageUrls.add(url);
             }
         }
     }
@@ -794,10 +794,12 @@ client.on('messageCreate', async message => {
     // 3. Discord Embeds (if present immediately)
     if (message.embeds.length > 0) {
         for (const embed of message.embeds) {
-            if (embed.image) imagesToProcess.push(embed.image.url);
-            else if (embed.thumbnail) imagesToProcess.push(embed.thumbnail.url);
+            if (embed.image) uniqueImageUrls.add(embed.image.url);
+            else if (embed.thumbnail) uniqueImageUrls.add(embed.thumbnail.url);
         }
     }
+
+    const imagesToProcess = Array.from(uniqueImageUrls);
 
     if (imagesToProcess.length > 0) {
         let processingMsg = null;
