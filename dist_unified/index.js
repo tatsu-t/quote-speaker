@@ -579,17 +579,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const channel = oldState.channel || oldState.guild.channels.cache.get(oldState.channelId);
         // If bot is the only one left
         if (channel && channel.members.size === 1 && channel.members.has(client.user.id)) {
+            const textChannelId = boundTextChannels.get(guildId) || botChannelId;
             connection.destroy();
-            connection.destroy();
-            // Use bound channel first, fallback to last active
-            const textChannelId = boundTextChannels.get(guildId) || lastTextChannel.get(guildId);
+            boundTextChannels.delete(guildId); // Cleanup
             if (textChannelId) {
                 const textChannel = client.channels.cache.get(textChannelId);
                 if (textChannel) {
                     textChannel.send("ボイスチャンネルに誰もいなくなったため、自動退出しました。");
                 }
             }
-            boundTextChannels.delete(guildId); // Cleanup
             return; // Exit as bot has left
         }
     }
@@ -635,7 +633,7 @@ client.on('messageCreate', async message => {
     if (message.mentions.everyone) return;
 
     // 2. Check for Direct Mention (User Mention Only)
-    const isDirectMention = message.mentions.has(client.user);
+    const isDirectMention = message.mentions.users.has(client.user.id) && !message.mentions.everyone && message.mentions.roles.size === 0;
 
     // 3. Check for Reply to Bot
     let isReplyToBot = false;
@@ -693,7 +691,7 @@ client.on('messageCreate', async message => {
     // 1. Must have a Voice Connection.
     // 2. Must be in the Bound Text Channel.
     // 3. If AutoRead is OFF, must have potential images (Quote check).
-    if (!isMention) {
+    if (!isTargeted) {
         if (!connection) return;
 
         const boundChannelId = boundTextChannels.get(guildId);
@@ -708,7 +706,7 @@ client.on('messageCreate', async message => {
     }
 
     // --- Special OCR Logic (Text Reply Only, No TTS) ---
-    if (isMention) {
+    if (isTargeted) {
         // Case A: Reply to an image (OCR the referenced image)
         if (message.reference && message.reference.messageId) {
             try {
@@ -824,7 +822,7 @@ client.on('messageCreate', async message => {
 
     if (imagesToProcess.length > 0) {
         let processingMsg = null;
-        if (isMention) {
+        if (isTargeted) {
             processingMsg = await message.reply("画像処理中...");
         }
 
@@ -834,7 +832,7 @@ client.on('messageCreate', async message => {
                     const result = await processImageAttachment(imageUrl);
                     let segmentText = "";
 
-                    if (isMention) {
+                    if (isTargeted) {
                         if (result.text) {
                             segmentText = result.text;
                         } else {
@@ -886,11 +884,11 @@ client.on('messageCreate', async message => {
                     adapterCreator: message.guild.voiceAdapterCreator,
                 });
             } catch (joinError) {
-                if (isMention) return message.reply("エラー: ボイスチャンネルへの参加に失敗しました。");
+                if (isTargeted) return message.reply("エラー: ボイスチャンネルへの参加に失敗しました。");
                 return;
             }
         } else {
-            if (isMention) return message.reply("ボイスチャンネルに参加してからメンションしてください。");
+            if (isTargeted) return message.reply("ボイスチャンネルに参加してからメンションしてください。");
             return;
         }
     }
@@ -900,7 +898,7 @@ client.on('messageCreate', async message => {
 
     try {
         // Reply FIRST (if mention)
-        if (isMention) {
+        if (isTargeted) {
             // Truncate reply if too long
             let finalReply = `文章：${replyText}`;
             if (finalReply.length > 2000) {
@@ -924,7 +922,7 @@ client.on('messageCreate', async message => {
 
     } catch (error) {
         console.error(error);
-        if (isMention) message.reply(`エラー: ${error.message}`);
+        if (isTargeted) message.reply(`エラー: ${error.message}`);
     }
 });
 

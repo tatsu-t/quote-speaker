@@ -501,8 +501,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const channel = oldState.channel || oldState.guild.channels.cache.get(oldState.channelId);
         // If bot is the only one left
         if (channel && channel.members.size === 1 && channel.members.has(client.user.id)) {
+            const textChannelId = boundTextChannels.get(guildId) || botChannelId;
             connection.destroy();
-            const textChannelId = lastTextChannel.get(guildId);
+            boundTextChannels.delete(guildId);
             if (textChannelId) {
                 const textChannel = client.channels.cache.get(textChannelId);
                 if (textChannel) {
@@ -548,7 +549,7 @@ client.on('messageCreate', async message => {
     if (message.mentions.everyone) return;
 
     // 2. Check for Direct Mention (User Mention Only)
-    const isDirectMention = message.mentions.has(client.user);
+    const isDirectMention = message.mentions.users.has(client.user.id) && !message.mentions.everyone && message.mentions.roles.size === 0;
 
     // 3. Check for Reply to Bot
     let isReplyToBot = false;
