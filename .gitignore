@@ -1,4 +1,10 @@
 node_modules/
 .env
-dist_vps/.env
 *.zip
+
+# runtime state
+data/persist.json
+
+# IDE / tools
+.claude/
+.omc/
