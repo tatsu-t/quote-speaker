@@ -45,11 +45,21 @@ async function handleInteraction(interaction) {
         }
 
         else if (commandName === 'autoread') {
-            const next = !(autoReadStates.get(guildId) || false);
-            autoReadStates.set(guildId, next);
-            boundTextChannels.set(guildId, interaction.channel.id);
-            persist.save();
-            await interaction.reply(`自動読み上げを **${next ? 'ON' : 'OFF'}** にしました。`);
+            const mode = interaction.options.getString('mode');
+            if (mode === 'on') {
+                autoReadStates.set(guildId, true);
+                boundTextChannels.set(guildId, interaction.channel.id);
+                persist.save();
+                await interaction.reply('自動読み上げを ON にしました。');
+            } else if (mode === 'off') {
+                autoReadStates.set(guildId, false);
+                boundTextChannels.set(guildId, interaction.channel.id);
+                persist.save();
+                await interaction.reply('自動読み上げを OFF にしました。');
+            } else {
+                const current = autoReadStates.get(guildId) || false;
+                await interaction.reply(`自動読み上げ: 現在 ${current ? 'ON' : 'OFF'}`);
+            }
         }
 
         else if (commandName === 'dict') {
@@ -86,22 +96,38 @@ async function handleInteraction(interaction) {
         }
 
         else if (commandName === 'name') {
-            const next = !(nameReadStates.get(guildId) || false);
-            nameReadStates.set(guildId, next);
-            persist.save();
-            await interaction.reply(`Quote画像の発言者名読み上げを **${next ? 'ON' : 'OFF'}** にしました。`);
+            const mode = interaction.options.getString('mode');
+            if (mode === 'on') {
+                nameReadStates.set(guildId, true);
+                persist.save();
+                await interaction.reply('Quote画像の発言者名読み上げを ON にしました。');
+            } else if (mode === 'off') {
+                nameReadStates.set(guildId, false);
+                persist.save();
+                await interaction.reply('Quote画像の発言者名読み上げを OFF にしました。');
+            } else {
+                const current = nameReadStates.get(guildId) || false;
+                await interaction.reply(`Quote画像の発言者名読み上げ: 現在 ${current ? 'ON' : 'OFF'}`);
+            }
         }
 
         else if (commandName === 'kikisen') {
-            const current = listenChannels.get(guildId);
-            if (current === interaction.channel.id) {
-                listenChannels.delete(guildId);
-                persist.save();
-                await interaction.reply('このチャンネルの聞き専設定を解除しました。');
-            } else {
+            const mode = interaction.options.getString('mode');
+            if (mode === 'on') {
                 listenChannels.set(guildId, interaction.channel.id);
                 persist.save();
                 await interaction.reply('このチャンネルを聞き専チャンネルに設定しました。');
+            } else if (mode === 'off') {
+                listenChannels.delete(guildId);
+                persist.save();
+                await interaction.reply('聞き専チャンネルの設定を解除しました。');
+            } else {
+                const current = listenChannels.get(guildId);
+                if (current) {
+                    await interaction.reply(`聞き専チャンネル: <#${current}>`);
+                } else {
+                    await interaction.reply('聞き専チャンネルは設定されていません。');
+                }
             }
         }
 

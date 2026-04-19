@@ -16,7 +16,11 @@ const commands = [
             opt.setName('image').setDescription('テキストを読み取る画像').setRequired(false)),
     new SlashCommandBuilder()
         .setName('autoread')
-        .setDescription('自動読み上げモードのON/OFF切り替え'),
+        .setDescription('自動読み上げモードの設定/解除/確認')
+        .addStringOption(opt =>
+            opt.setName('mode').setDescription('on/off')
+                .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })
+                .setRequired(false)),
     new SlashCommandBuilder()
         .setName('dict')
         .setDescription('読み上げ辞書を管理します')
@@ -34,10 +38,18 @@ const commands = [
         .setDescription('レイテンシを表示します'),
     new SlashCommandBuilder()
         .setName('kikisen')
-        .setDescription('このチャンネルを聞き専チャンネルに設定します（再実行で解除）'),
+        .setDescription('聞き専チャンネルの設定/解除/確認')
+        .addStringOption(opt =>
+            opt.setName('mode').setDescription('on/off')
+                .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })
+                .setRequired(false)),
     new SlashCommandBuilder()
         .setName('name')
-        .setDescription('Quote画像の発言者名読み上げのON/OFF切り替え'),
+        .setDescription('Quote画像の発言者名読み上げのON/OFF/確認')
+        .addStringOption(opt =>
+            opt.setName('mode').setDescription('on/off')
+                .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })
+                .setRequired(false)),
 ].map(cmd => cmd.toJSON());
 
 async function registerCommands(client) {
