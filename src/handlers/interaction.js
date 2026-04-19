@@ -183,17 +183,17 @@ async function handleInteraction(interaction) {
         }
 
         else if (commandName === 'voice') {
-            const id = interaction.options.getInteger('id');
-            const showList = interaction.options.getBoolean('list');
+            const sub = interaction.options.getSubcommand();
 
-            if (id !== null) {
+            if (sub === 'set') {
+                const id = interaction.options.getInteger('id');
                 if (id < 0) {
                     return interaction.reply({ content: '話者IDは0以上の数値を指定してください。', ephemeral: true });
                 }
                 voiceSpeakers.set(guildId, id);
                 persist.save();
                 await interaction.reply(`話者IDを ${id} に設定しました。`);
-            } else if (showList) {
+            } else if (sub === 'list') {
                 const speakers = listSpeakers();
                 const embed = new EmbedBuilder()
                     .setTitle('利用可能な話者一覧')
@@ -205,7 +205,7 @@ async function handleInteraction(interaction) {
                 const current = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
                 embed.setFooter({ text: `現在の話者ID: ${current}` });
                 await interaction.reply({ embeds: [embed], ephemeral: true });
-            } else {
+            } else if (sub === 'current') {
                 const current = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
                 await interaction.reply(`現在の話者ID: ${current}`);
             }

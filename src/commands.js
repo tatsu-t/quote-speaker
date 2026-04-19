@@ -53,10 +53,13 @@ const commands = [
     new SlashCommandBuilder()
         .setName('voice')
         .setDescription('読み上げ話者の設定/確認/一覧')
-        .addIntegerOption(opt =>
-            opt.setName('id').setDescription('話者ID（省略で現在の設定を表示）').setRequired(false))
-        .addBooleanOption(opt =>
-            opt.setName('list').setDescription('利用可能な話者一覧を表示').setRequired(false)),
+        .addSubcommand(sub => sub
+            .setName('set').setDescription('話者IDを設定')
+            .addIntegerOption(opt => opt.setName('id').setDescription('話者ID').setRequired(true)))
+        .addSubcommand(sub => sub
+            .setName('current').setDescription('現在の話者を表示'))
+        .addSubcommand(sub => sub
+            .setName('list').setDescription('利用可能な話者一覧を表示')),
 ].map(cmd => cmd.toJSON());
 
 async function registerCommands(client) {
