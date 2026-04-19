@@ -7,6 +7,8 @@ const { handleMessage } = require('./handlers/message');
 const { handleVoiceStateUpdate } = require('./handlers/voiceState');
 const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels, voiceSpeakers } = require('./state');
 const persist = require('./services/persist');
+const { generateAudio, DEFAULT_SPEAKER } = require('./services/tts');
+const { playAudio } = require('./services/audio');
 
 const client = new Client({
     intents: [
@@ -41,6 +43,25 @@ client.once('ready', async () => {
             });
             activeVoiceChannels.set(guildId, channelId);
             console.log(`自動再接続: ${guild.name} #${channel.name}`);
+
+            const isAutoRead = autoReadStates.get(guildId) || false;
+            if (isAutoRead) {
+                // autoread ON → TTSで通知
+                try {
+                    const speakerId = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
+                    const audio = await generateAudio('再接続しました', speakerId);
+                    await playAudio(guildId, audio);
+                } catch (e) {
+                    console.error('再接続TTS通知エラー:', e.message);
+                }
+            } else {
+                // autoread OFF → テキストで通知
+                const textChannelId = boundTextChannels.get(guildId) || listenChannels.get(guildId);
+                if (textChannelId) {
+                    const ch = client.channels.cache.get(textChannelId);
+                    ch?.send('再接続しました。').catch(() => {});
+                }
+            }
         } catch (err) {
             console.error(`自動再接続に失敗 (${guildId}):`, err.message);
         }
