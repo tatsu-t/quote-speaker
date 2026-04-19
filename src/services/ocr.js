@@ -44,7 +44,7 @@ async function extractTextFromImage(imageUrl) {
 
 ルール:
 - isQuote: "Make it a Quote" / "Quote Maker" / "Fake Quote Maker" などで作られた名言画像ならtrue
-- isQuoteがtrueの場合、textには名言の本文のみ（発言者名・@ハンドル・ブランド名は除外）
+- isQuoteがtrueの場合、textには名言の本文のみ（発言者名・表示名・@ハンドル・ブランド名は絶対にtextに含めないこと）
 - isQuoteがtrueの場合、speakerNameには発言者の表示名（@ハンドルやブランド名は除く）。不明な場合は""
 - isQuoteがfalseの場合、textには画像内の全テキスト、speakerNameは""
 - テキストがない場合はtext=""
@@ -60,10 +60,16 @@ async function extractTextFromImage(imageUrl) {
 
     try {
         const parsed = JSON.parse(content);
+        let text = (parsed.text || '').trim();
+        const speakerName = (parsed.speakerName || '').trim();
+        // OCRがtextにspeakerNameを含めてしまうケースへの対処
+        if (parsed.isQuote && speakerName && text.startsWith(speakerName)) {
+            text = text.slice(speakerName.length).replace(/^[\s。、.,:：\-–—]+/, '').trim();
+        }
         return {
-            text: (parsed.text || '').trim(),
+            text,
             isQuote: !!parsed.isQuote,
-            speakerName: (parsed.speakerName || '').trim(),
+            speakerName,
         };
     } catch {
         return { text: content, isQuote: false, speakerName: '' };
