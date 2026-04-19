@@ -57,6 +57,7 @@ async function extractTextFromImage(imageUrl) {
     }, { headers: getHeaders() });
 
     const content = response.data.choices[0].message.content.trim();
+    console.log('[OCR raw]', content);
 
     try {
         const parsed = JSON.parse(content);
