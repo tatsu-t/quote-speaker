@@ -1,0 +1,177 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1776564917551,
+  "projectRoot": "C:\\Users\\tatsu\\Desktop\\scripts\\quote-speaker",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dist_home": {
+      "path": "dist_home",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1776564917531,
+      "keyFiles": [
+        "docker-compose.yml",
+        "frpc.toml"
+      ]
+    },
+    "dist_unified": {
+      "path": "dist_unified",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1776564917531,
+      "keyFiles": [
+        "dictionary.json",
+        "docker-compose.yml",
+        "Dockerfile",
+        "index.js",
+        "package.json"
+      ]
+    },
+    "dist_vps": {
+      "path": "dist_vps",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1776564917532,
+      "keyFiles": [
+        "dictionary.json",
+        "docker-compose.yml",
+        "Dockerfile",
+        "index.js",
+        "package.json"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src\\handlers\\message.js",
+      "accessCount": 19,
+      "lastAccessed": 1776568214131,
+      "type": "file"
+    },
+    {
+      "path": "src\\handlers\\interaction.js",
+      "accessCount": 13,
+      "lastAccessed": 1776568202676,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\ocr.js",
+      "accessCount": 5,
+      "lastAccessed": 1776567891759,
+      "type": "file"
+    },
+    {
+      "path": "src\\index.js",
+      "accessCount": 5,
+      "lastAccessed": 1776568020386,
+      "type": "file"
+    },
+    {
+      "path": "src\\state.js",
+      "accessCount": 4,
+      "lastAccessed": 1776567999871,
+      "type": "file"
+    },
+    {
+      "path": "src\\handlers\\voiceState.js",
+      "accessCount": 4,
+      "lastAccessed": 1776568085651,
+      "type": "file"
+    },
+    {
+      "path": "src\\commands.js",
+      "accessCount": 4,
+      "lastAccessed": 1776568191147,
+      "type": "file"
+    },
+    {
+      "path": "Dockerfile",
+      "accessCount": 2,
+      "lastAccessed": 1776566029800,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 2,
+      "lastAccessed": 1776566229127,
+      "type": "file"
+    },
+    {
+      "path": ".env.example",
+      "accessCount": 2,
+      "lastAccessed": 1776566229652,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 1,
+      "lastAccessed": 1776564969908,
+      "type": "file"
+    },
+    {
+      "path": "docker-compose.yml",
+      "accessCount": 1,
+      "lastAccessed": 1776565891150,
+      "type": "file"
+    },
+    {
+      "path": "data\\dictionary.json",
+      "accessCount": 1,
+      "lastAccessed": 1776565892368,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\dictionary.js",
+      "accessCount": 1,
+      "lastAccessed": 1776565903219,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\tts.js",
+      "accessCount": 1,
+      "lastAccessed": 1776565906417,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\audio.js",
+      "accessCount": 1,
+      "lastAccessed": 1776565923397,
+      "type": "file"
+    },
+    {
+      "path": "src\\services\\persist.js",
+      "accessCount": 1,
+      "lastAccessed": 1776568005174,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

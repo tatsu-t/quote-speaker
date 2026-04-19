@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/tatsu/.claude/projects/C--Users-tatsu-Desktop-scripts-quote-speaker/memory//**)",
+      "Read(//c/Users/tatsu/.claude/projects/C--Users-tatsu-Desktop-scripts-quote-speaker/memory/**)"
+    ]
+  }
+}
