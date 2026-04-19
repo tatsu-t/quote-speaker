@@ -62,17 +62,16 @@ const commands = [
 async function registerCommands(client) {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-    // グローバルコマンド登録（反映に最大1時間）
-    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log('グローバルコマンドを登録しました。');
+    // グローバルコマンドをクリア（ギルドコマンドのみ使用）
+    await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
 
-    // ギルドコマンドも登録（即時反映）
+    // ギルドコマンド登録（即時反映）
     for (const [guildId] of client.guilds.cache) {
         try {
             await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
-            console.log(`ギルドコマンドを登録: ${guildId}`);
+            console.log(`コマンドを登録: ${guildId}`);
         } catch (err) {
-            console.error(`ギルドコマンドの登録に失敗 (${guildId}):`, err.message);
+            console.error(`コマンドの登録に失敗 (${guildId}):`, err.message);
         }
     }
 }
