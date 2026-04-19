@@ -45,9 +45,10 @@ async function extractTextFromImage(imageUrl) {
 ルール:
 - isQuote: "Make it a Quote" / "Quote Maker" / "Fake Quote Maker" などで作られた名言画像ならtrue
 - isQuoteがtrueの場合の重要ルール:
-  - textには「発言内容（メッセージ本文）」のみを入れること
-  - 以下はtextに絶対含めないこと: 発言者の表示名、ユーザー名、@ハンドル、プロフィール装飾テキスト、ボット名
-  - speakerNameには発言者の表示名のみ（装飾文字♡★等は除く）。不明なら""
+  - Quote画像の構造: 上部に引用されたメッセージ本文、下部に発言者の名前・ハンドル
+  - textには上部の「引用されたメッセージ本文」のみを入れること
+  - speakerNameには下部の発言者名（@ハンドルや装飾文字は除く）。不明なら""
+  - textに絶対含めてはいけないもの: 発言者の表示名、ユーザー名、@ハンドル、プロフィール装飾テキスト、ボット名
 - isQuoteがfalseの場合、textには画像内の全テキスト、speakerNameは""
 - テキストがない場合はtext=""
 - "Make it a Quote#6660" という文字列は絶対にtextに含めないこと
@@ -66,16 +67,18 @@ async function extractTextFromImage(imageUrl) {
         let text = (parsed.text || '').trim();
         const speakerName = (parsed.speakerName || '').trim();
         // Quote画像のテキストからプロフィール情報を除去
-        if (parsed.isQuote && speakerName) {
+        if (parsed.isQuote) {
             const lines = text.split('\n').filter(line => {
                 const trimmed = line.trim();
                 if (!trimmed) return false;
                 // speakerNameを含む行を除去
-                if (trimmed.includes(speakerName)) return false;
+                if (speakerName && trimmed.includes(speakerName)) return false;
                 // @ハンドル行を除去
                 if (/^@\S+$/.test(trimmed)) return false;
-                // ユーザー名っぽい行を除去（装飾+英数字のみ）
-                if (/^[-\s✿★♡♥☆※·•\/|]+\s*\S+$/.test(trimmed) && !trimmed.includes(' ')) return false;
+                // 「- 装飾 / ユーザー名」パターンを除去
+                if (/^[-\s]*[✿★♡♥☆※·•♦♣♠♪♫◆◇▲△▽▼]+\s*[\/|]\s*\S+$/i.test(trimmed)) return false;
+                // 英数字+記号のみの短い行（ユーザー名）を除去
+                if (/^[\w._\-]+$/.test(trimmed) && trimmed.length < 30) return false;
                 return true;
             });
             text = lines.join('\n').trim();
