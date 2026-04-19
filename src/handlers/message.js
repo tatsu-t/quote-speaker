@@ -96,8 +96,8 @@ async function handleMessage(client, message) {
         const boundChannelId = boundTextChannels.get(guildId);
         const isFromVCContext = message.channel.id === botChannelId || message.channel.id === listenChannelId;
 
-        // VCコンテキスト（VC本体 or 聞き専）からの画像はバインドチャンネル制限を無視して通す
-        if (boundChannelId && message.channel.id !== boundChannelId && !(isFromVCContext && hasEvaluationTargets)) return;
+        // VCコンテキスト（VC本体 or 聞き専）からの画像 or autoreadテキストはバインドチャンネル制限を無視して通す
+        if (boundChannelId && message.channel.id !== boundChannelId && !(isFromVCContext && (hasEvaluationTargets || isAutoRead))) return;
         if (!isAutoRead && !hasEvaluationTargets) return;
     }
 
