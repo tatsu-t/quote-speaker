@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels } = require('../state');
+const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels, voiceSpeakers } = require('../state');
 
 const PERSIST_FILE = path.join(__dirname, '../../data/persist.json');
 
@@ -13,6 +13,7 @@ function save() {
             listenChannels: Object.fromEntries(listenChannels),
             nameRead: Object.fromEntries(nameReadStates),
             voiceChannels: Object.fromEntries(activeVoiceChannels),
+            voiceSpeakers: Object.fromEntries(voiceSpeakers),
         }, null, 2));
     } catch (e) {
         console.error('状態の保存に失敗しました:', e);

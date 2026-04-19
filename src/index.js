@@ -5,7 +5,7 @@ const { registerCommands } = require('./commands');
 const { handleInteraction } = require('./handlers/interaction');
 const { handleMessage } = require('./handlers/message');
 const { handleVoiceStateUpdate } = require('./handlers/voiceState');
-const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels } = require('./state');
+const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels, voiceSpeakers } = require('./state');
 const persist = require('./services/persist');
 
 const client = new Client({
@@ -26,6 +26,7 @@ client.once('ready', async () => {
     for (const [guildId, val] of Object.entries(saved.boundTextChannels || {})) boundTextChannels.set(guildId, val);
     for (const [guildId, val] of Object.entries(saved.listenChannels || {})) listenChannels.set(guildId, val);
     for (const [guildId, val] of Object.entries(saved.nameRead || {})) nameReadStates.set(guildId, val);
+    for (const [guildId, val] of Object.entries(saved.voiceSpeakers || {})) voiceSpeakers.set(guildId, val);
 
     // VCに自動再接続
     for (const [guildId, channelId] of Object.entries(saved.voiceChannels || {})) {

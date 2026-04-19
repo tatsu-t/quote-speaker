@@ -1,7 +1,7 @@
 const { getVoiceConnection } = require('@discordjs/voice');
-const { autoReadStates, boundTextChannels, activeVoiceChannels } = require('../state');
+const { autoReadStates, boundTextChannels, activeVoiceChannels, voiceSpeakers } = require('../state');
 const persist = require('../services/persist');
-const { generateAudio } = require('../services/tts');
+const { generateAudio, DEFAULT_SPEAKER } = require('../services/tts');
 const { playAudio } = require('../services/audio');
 
 async function handleVoiceStateUpdate(client, oldState, newState) {
@@ -42,7 +42,8 @@ async function handleVoiceStateUpdate(client, oldState, newState) {
 
     if (notification) {
         try {
-            const audio = await generateAudio(notification);
+            const speakerId = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
+            const audio = await generateAudio(notification, speakerId);
             await playAudio(guildId, audio);
         } catch (err) {
             console.error('入退室通知エラー:', err.message);

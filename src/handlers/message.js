@@ -1,7 +1,7 @@
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
-const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels } = require('../state');
+const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels, voiceSpeakers } = require('../state');
 const persist = require('../services/persist');
-const { generateAudio } = require('../services/tts');
+const { generateAudio, DEFAULT_SPEAKER } = require('../services/tts');
 const { extractTextFromImage } = require('../services/ocr');
 const { playAudio, skipCurrent, clearQueue } = require('../services/audio');
 const dict = require('../services/dictionary');
@@ -136,7 +136,7 @@ async function handleMessage(client, message) {
         .replace(URL_REGEX, '')             // URL除去
         .replace(/w{3,}/gi, 'www')          // 笑い正規化
         .trim();
-    baseText = dict.apply(baseText);
+    baseText = dict.apply(guildId, baseText);
 
     const segments = [];
     if (baseText && (isTargeted || isAutoRead)) {
@@ -230,9 +230,10 @@ async function handleMessage(client, message) {
             await replyChunked(message, `文章：${segments.join(' / ')}`);
         }
 
+        const speakerId = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
         for (let text of segments) {
             if (text.length > 200) text = text.substring(0, 197) + '...';
-            const audio = await generateAudio(text);
+            const audio = await generateAudio(text, speakerId);
             await playAudio(guildId, audio);
         }
     } catch (err) {

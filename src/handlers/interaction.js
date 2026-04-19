@@ -1,8 +1,8 @@
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 const { EmbedBuilder } = require('discord.js');
-const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels } = require('../state');
+const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels, voiceSpeakers } = require('../state');
 const persist = require('../services/persist');
-const { generateAudio } = require('../services/tts');
+const { generateAudio, listSpeakers, DEFAULT_SPEAKER } = require('../services/tts');
 const { extractTextFromImage } = require('../services/ocr');
 const { playAudio } = require('../services/audio');
 const dict = require('../services/dictionary');
@@ -67,17 +67,17 @@ async function handleInteraction(interaction) {
             if (sub === 'add') {
                 const word = interaction.options.getString('word');
                 const reading = interaction.options.getString('reading');
-                dict.add(word, reading);
+                dict.add(guildId, word, reading);
                 await interaction.reply(`辞書に登録しました: ${word} → ${reading}`);
             } else if (sub === 'remove') {
                 const word = interaction.options.getString('word');
-                if (dict.remove(word)) {
+                if (dict.remove(guildId, word)) {
                     await interaction.reply(`辞書から削除しました: ${word}`);
                 } else {
                     await interaction.reply({ content: `その単語は登録されていません: ${word}`, ephemeral: true });
                 }
             } else if (sub === 'list') {
-                const entries = dict.list();
+                const entries = dict.list(guildId);
                 if (entries.length === 0) {
                     return interaction.reply({ content: '辞書は空です。', ephemeral: true });
                 }
@@ -157,7 +157,7 @@ async function handleInteraction(interaction) {
 
             if (!text) return interaction.editReply('読み上げるテキストか画像を指定してください。');
 
-            text = dict.apply(text);
+            text = dict.apply(guildId, text);
             if (text.length > 200) text = text.substring(0, 197) + '...';
 
             let connection = getVoiceConnection(guildId);
@@ -177,8 +177,49 @@ async function handleInteraction(interaction) {
             }
 
             await interaction.editReply(`文章：${text}`);
-            const audio = await generateAudio(text);
+            const speakerId = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
+            const audio = await generateAudio(text, speakerId);
             await playAudio(guildId, audio);
+        }
+
+        else if (commandName === 'voice') {
+            const id = interaction.options.getInteger('id');
+            const showList = interaction.options.getBoolean('list');
+
+            if (id !== null) {
+                if (id < 0) {
+                    return interaction.reply({ content: '話者IDは0以上の数値を指定してください。', ephemeral: true });
+                }
+                voiceSpeakers.set(guildId, id);
+                persist.save();
+                await interaction.reply(`話者IDを ${id} に設定しました。`);
+            } else if (showList) {
+                await interaction.deferReply({ ephemeral: true });
+                try {
+                    const speakers = await listSpeakers();
+                    const lines = speakers.map(s => {
+                        const styles = s.styles.map(st => `  ${st.id}: ${st.name}`).join('\n');
+                        return `${s.name}\n${styles}`;
+                    });
+                    const text = lines.join('\n');
+                    const chunks = [];
+                    let chunk = '';
+                    for (const line of text.split('\n')) {
+                        if (chunk.length + line.length + 1 > 1900) { chunks.push(chunk); chunk = ''; }
+                        chunk += line + '\n';
+                    }
+                    if (chunk) chunks.push(chunk);
+                    await interaction.editReply(chunks[0]);
+                    for (let i = 1; i < chunks.length; i++) {
+                        await interaction.followUp({ content: chunks[i], ephemeral: true });
+                    }
+                } catch (err) {
+                    await interaction.editReply(`話者一覧の取得に失敗しました: ${err.message}`);
+                }
+            } else {
+                const current = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
+                await interaction.reply(`現在の話者ID: ${current}`);
+            }
         }
 
     } catch (err) {
