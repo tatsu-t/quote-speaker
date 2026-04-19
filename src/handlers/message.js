@@ -101,8 +101,8 @@ async function handleMessage(client, message) {
         if (!isAutoRead && !hasEvaluationTargets) return;
     }
 
-    // --- OCRテキスト返信モード（TTS不要） ---
-    // リプライ先の画像をOCR（VC外でもVC内でも常にテキスト返信）
+    // --- OCRテキスト返信 + VC接続時はTTS ---
+    // リプライ先の画像をOCR
     if (isTargeted && message.reference?.messageId) {
         try {
             const ref = await message.channel.messages.fetch(message.reference.messageId);
@@ -110,6 +110,18 @@ async function handleMessage(client, message) {
                 const processingMsg = await message.reply('画像を読み取っています...');
                 const { text } = await extractTextFromImage(ref.attachments.first().url);
                 await editOrReplyChunked(processingMsg, message, text ? `OCR結果:\n${text}` : '文字を検出できませんでした。');
+                // VC接続中なら読み上げも行う
+                if (text && connection) {
+                    try {
+                        const speakerId = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
+                        let ttsText = text;
+                        if (ttsText.length > 200) ttsText = ttsText.substring(0, 197) + '...';
+                        const audio = await generateAudio(ttsText, speakerId);
+                        await playAudio(guildId, audio);
+                    } catch (err) {
+                        console.error('OCR TTS再生エラー:', err.message);
+                    }
+                }
                 return;
             }
         } catch (err) {
