@@ -42,4 +42,12 @@ function listSpeakers() {
     return SPEAKERS;
 }
 
-module.exports = { generateAudio, listSpeakers, DEFAULT_SPEAKER };
+function getSpeakerLabel(id) {
+    for (const s of SPEAKERS) {
+        const style = s.styles.find(st => st.id === id);
+        if (style) return `${s.name} (${style.name})`;
+    }
+    return null;
+}
+
+module.exports = { generateAudio, listSpeakers, getSpeakerLabel, DEFAULT_SPEAKER };

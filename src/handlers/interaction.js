@@ -2,7 +2,7 @@ const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 const { EmbedBuilder } = require('discord.js');
 const { autoReadStates, boundTextChannels, listenChannels, nameReadStates, activeVoiceChannels, voiceSpeakers } = require('../state');
 const persist = require('../services/persist');
-const { generateAudio, listSpeakers, DEFAULT_SPEAKER } = require('../services/tts');
+const { generateAudio, listSpeakers, getSpeakerLabel, DEFAULT_SPEAKER } = require('../services/tts');
 const { extractTextFromImage } = require('../services/ocr');
 const { playAudio } = require('../services/audio');
 const dict = require('../services/dictionary');
@@ -192,7 +192,9 @@ async function handleInteraction(interaction) {
                 }
                 voiceSpeakers.set(guildId, id);
                 persist.save();
-                await interaction.reply(`話者IDを ${id} に設定しました。`);
+                const label = getSpeakerLabel(id);
+                const display = label ? `${id} - ${label}` : `${id}`;
+                await interaction.reply(`話者を ${display} に設定しました。`);
             } else if (sub === 'list') {
                 const speakers = listSpeakers();
                 const embed = new EmbedBuilder()
@@ -207,7 +209,9 @@ async function handleInteraction(interaction) {
                 await interaction.reply({ embeds: [embed], ephemeral: true });
             } else if (sub === 'current') {
                 const current = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
-                await interaction.reply(`現在の話者ID: ${current}`);
+                const label = getSpeakerLabel(current);
+                const display = label ? `${current} - ${label}` : `${current}`;
+                await interaction.reply(`現在の話者: ${display}`);
             }
         }
 
