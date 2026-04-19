@@ -194,28 +194,17 @@ async function handleInteraction(interaction) {
                 persist.save();
                 await interaction.reply(`話者IDを ${id} に設定しました。`);
             } else if (showList) {
-                await interaction.deferReply({ ephemeral: true });
-                try {
-                    const speakers = await listSpeakers();
-                    const lines = speakers.map(s => {
-                        const styles = s.styles.map(st => `  ${st.id}: ${st.name}`).join('\n');
-                        return `${s.name}\n${styles}`;
-                    });
-                    const text = lines.join('\n');
-                    const chunks = [];
-                    let chunk = '';
-                    for (const line of text.split('\n')) {
-                        if (chunk.length + line.length + 1 > 1900) { chunks.push(chunk); chunk = ''; }
-                        chunk += line + '\n';
-                    }
-                    if (chunk) chunks.push(chunk);
-                    await interaction.editReply(chunks[0]);
-                    for (let i = 1; i < chunks.length; i++) {
-                        await interaction.followUp({ content: chunks[i], ephemeral: true });
-                    }
-                } catch (err) {
-                    await interaction.editReply(`話者一覧の取得に失敗しました: ${err.message}`);
+                const speakers = listSpeakers();
+                const embed = new EmbedBuilder()
+                    .setTitle('利用可能な話者一覧')
+                    .setColor(0x5865F2);
+                for (const s of speakers) {
+                    const value = s.styles.map(st => `\`${st.id}\` ${st.name}`).join('\n');
+                    embed.addFields({ name: s.name, value, inline: true });
                 }
+                const current = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
+                embed.setFooter({ text: `現在の話者ID: ${current}` });
+                await interaction.reply({ embeds: [embed], ephemeral: true });
             } else {
                 const current = voiceSpeakers.get(guildId) || DEFAULT_SPEAKER;
                 await interaction.reply(`現在の話者ID: ${current}`);
